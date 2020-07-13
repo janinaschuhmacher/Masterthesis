@@ -10,7 +10,7 @@ support system was varied between participants and the experiment spanned multip
 ## Where to start
 The [statistical hypothesis tests](test_hypotheses/all_groups/hypothesis_analysis.Rmd) sum up the main results of the studies:  
 Contrary to our hypotheses, participants who worked with the support system needed,
-on average, longer to resume an interrupted task ![pic](test_hypotheses/all_groups/plots_hypothesis_tests/res_speed_per_group.png?raw=true) and, to some extent, experienced higher
+on average, longer to resume an interrupted task ![pic](https://github.com/janinaschuhmacher/Masterthesis/blob/master/test_hypotheses/all_groups/plots_hypothesis_tests/res_speed_per_groups.png?raw=true) and, to some extent, experienced higher
 mental workload than participants who received no support.
 
 ### 
