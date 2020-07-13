@@ -1,0 +1,430 @@
+---
+title: "Hypothesis analysis only for control and experimental group (to achieve a balanced data set)"
+output: html_notebook
+---
+
+This notebook includes the statistical hypothesis tests excluding the context-free experimental group, since it has less test participants than the other two groups (N = 13 vs N = 21). This way, we can compare if the fact that the full dataset is unbalanced impacts the results of the hypothesis tests. 
+
+```{r}
+library(WRS2)
+library(rcompanion)
+library(feather)
+library(ggplot2)  
+library(ez)
+library(schoRsch)
+library(MASS)
+library(car)
+library(tidyverse)
+library(here)
+library(rstatix)
+```
+
+## Load the data
+
+We are loading three versions of our dataframe. df_wide has one row per participant. 
+```{r}
+df_wide <- read_feather(path = here('../../data_frames/results_test_18-03-2020.file'))
+```
+
+df_long has one row per trial per participant (so three rows per participant for interruption 1, 2, 3). 
+```{r}
+df_long <- read_feather(path = here('../../data_frames/results_test_18-03-2020_messwdh.file'))
+```
+
+df_nasa has four rows per particpant, one for each nasa-tlx test
+```{r}
+df_nasa <- read_feather(path = here('../../data_frames/results_test_18-03-2020_messwdh_nasa.file'))
+```
+
+## Prepare the data
+
+### Assign participants to the experimental group 
+* version 1 and 2 --> control group
+* version 3 und 4 --> context-free experimental group 
+* version 5 und 6--> context-sensitive experimental group
+```{r}
+df_long$group <- ifelse((df_long$version == 5 | df_long$version == 6), 'context-sensitive experimental group', ifelse((df_long$version == 1 | df_long$version == 2), 'control group', 'context-free experimental group'))
+df_nasa$group <- ifelse((df_nasa$version == 5 | df_nasa$version == 6), 'context-sensitive experimental group', ifelse((df_nasa$version == 1 | df_nasa$version == 2), 'control group', 'context-free experimental group'))
+df_wide$group <- ifelse((df_wide$version == 5 | df_wide$version == 6), 'context-sensitive experimental group', ifelse((df_wide$version == 1 | df_wide$version == 2), 'control group', 'context-free experimental group'))
+
+```
+
+### Create balanced dataframe without the context-free experimental group
+
+
+```{r}
+df_long <- df_long[!(df_long$group=="context-free experimental group"),]
+df_nasa <- df_nasa[!(df_nasa$group=="context-free experimental group"),]
+df_wide <- df_wide[!(df_wide$group=="context-free experimental group"),]
+
+```
+
+
+
+## Testing Hypotheses
+
+### Performance 
+The statistical analysis of the data revealed no significant effects for either of the performance measure, confirming the analysis which included the context-free experimental group.
+
+
+#### Correct entries
+There is no significant effect for the number of correct entries.
+
+
+```{r}
+mean_correct_entries <- tapply(df_wide$correct_entries_after_interruption, df_wide$group, mean)
+mean_correct_entries
+```
+
+```{r}
+aggregate( correct_entries_after_interruption ~ group, df_wide, sd )
+```
+
+Test requirements for t-test
+
+```{r}
+## lineare model for correct_entries ~ groups
+lm_cor_entries <- lm(df_wide$correct_entries_after_interruption~ df_wide$group)
+
+# get studentized residuals
+rstudent_cor_entries <- rstudent(lm_cor_entries)
+
+qqnorm(rstudent_cor_entries); qqline(rstudent_cor_entries)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = rstudent_cor_entries )
+
+## test homogenity of variances
+var.test(correct_entries_after_interruption~group, conf.level=0.95, data = df_wide, alternative=c("two.sided", "less", "greater"))
+```
+
+The tests indicate that the data is normally distributed with equal variances. Thus, we compute a t-test.
+
+```{r}
+ttest_correct_entries <- t.test(df_wide$correct_entries_after_interruption~ df_wide$group)
+ttest_correct_entries
+```
+
+
+```{r}
+# plot means between groups
+barplot(mean_correct_entries, col = c('darkgoldenrod2', 'darkcyan'), xlab = 'group', ylab = 'Anzahl korrekter Einträge (Mittelwerte)')
+
+# boxplots
+ggplot(df_wide,aes(x = group, y= correct_entries_after_interruption) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "correct entries",
+       title="correct entries by group")
+```
+
+
+
+
+#### Mistakes
+There are no significant effects for the number of mistakes.
+
+```{r}
+mean_errors <- tapply(df_wide$mistakes_after_interruption, df_wide$group, mean)
+```
+
+##### test requirements for t-test
+
+
+```{r}
+lm_mistakes <- lm(df_wide$mistakes_after_interruption~ df_wide$group)
+
+# get studentized residuals
+rstudent_mistakes <- rstudent(lm_mistakes)
+
+qqnorm(rstudent_mistakes); qqline(rstudent_mistakes)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = rstudent_mistakes )
+
+## test homogenity of variances
+var.test(mistakes_after_interruption~group, conf.level=0.95, data = df_wide)
+```
+
+The QQplots indicate that the data is not normally distributed. Thus, we compute a Mann-Whitney-U-Test for two independent samples. 
+```{r}
+# compare between groups
+utest_mistakes <- wilcox.test(df_wide$mistakes_after_interruption~ df_wide$group, paired=FALSE, conf.int=FALSE)
+utest_mistakes
+```
+
+
+```{r}
+# plot means between groups
+barplot(mean_errors, col = c('darkgoldenrod2', 'darkcyan'), xlab = 'Group', ylab = 'Incorrect order list entries')
+
+# boxplots
+ggplot(df_wide,aes(x = df_wide$'group', y=df_wide$mistakes_after_interruption) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "mistakes",
+       title="mistakes by group")
+```
+
+
+Exclude outliers
+```{r}
+tapply(df_wide$mistakes_after_interruption, df_wide$group, mean)
+tapply(df_wide$mistakes_after_interruption, df_wide$group, sd)
+exclude <- list(11, 26)
+df_perf <- subset(df_wide, !(df_wide$partnr %in% exclude))
+
+utest_mistakes_o <- wilcox.test(df_perf$mistakes_after_interruption~ df_perf$group, paired=FALSE, conf.int=FALSE)
+utest_mistakes_o
+```
+
+#### Ratio of mistakes to total amount of entries
+Statistical analysis reveals no significant effect.
+
+```{r}
+## nr of mistakes / correct entries
+df_wide <- transform(df_wide, perf = mistakes_after_interruption / entries_after_interruption)
+df_perf <- transform(df_perf, perf = mistakes_after_interruption / entries_after_interruption)
+mean_perf <- tapply(df_wide$perf, df_wide$group, mean)
+````
+
+##### test requirements for t-test
+
+
+```{r}
+## lineare model for correct_entries ~ groups
+lm_perf <- lm(df_wide$perf~ df_wide$group)
+
+# get studentized residuals
+rstudent_perf <- rstudent(lm_perf)
+
+qqnorm(rstudent_perf); qqline(rstudent_perf)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = rstudent_perf )
+
+## test homogenity of variances
+var.test(perf~group, conf.level=0.95, data = df_wide, alternative=c("two.sided", "less", "greater"))
+```
+
+The QQplots indicate that the data is not normally distributed. Thus, we compute a Mann-Whitney-U-Test for two independent samples. 
+
+```{r}
+# compare between groups
+utest_perf <- wilcox.test(df_wide$perf~ df_wide$group, paired=FALSE, conf.int=FALSE)
+utest_perf
+```
+
+
+```{r}
+# plot means between groups
+barplot(mean_perf, col = c('darkgoldenrod2', 'darkcyan'), xlab = 'group', ylab = 'Fehler pro richtige Einträge')
+
+# boxplots
+ggplot(df_wide,aes(x = df_wide$'group', y=df_wide$perf) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "mistakes per correct entries",
+       title="mistakes per correct entries by group")
+
+```
+
+
+Analysis without participants 11 and 26 
+```{r}
+utest_perf <- wilcox.test(df_perf$perf~ df_perf$group)
+utest_perf
+```
+
+
+### NASA-TLX
+Does mental workload when working on the primary task differ between groups and over time?
+
+As in the analysis of the complete dataset, the analysis reveals a significant main effect of trial but neither a main effect of group nor an interaction effect.   
+
+##### Check requirements for ANOVA
+
+```{r}
+# convert trial, group and subject number to factors
+df_nasa$trial <- factor(df_nasa$trial, levels=c(0,1,2,3), labels=c('0','1','2','3'))
+df_nasa$group <- factor(df_nasa$group)
+df_nasa$partnr <- factor(df_nasa$partnr)
+
+
+# compute split-plots anova
+sp_nasa_anova <- aov(NASATLX ~ trial*group + Error(partnr/(trial)), data=df_nasa)
+summary(sp_nasa_anova)
+
+## compute easy_anova as a check for split-plots anova
+ez_nasa_anova = ezANOVA(
+data = df_nasa
+, dv = NASATLX
+, wid = partnr
+, within = trial
+, between = group
+, detailed = TRUE
+)
+
+anova_out(ez_nasa_anova)
+
+
+# interaction
+interaction.plot(df_nasa$`trial`, df_nasa$group, df_nasa$NASATLX, xlab = 'trial', ylab = 'NASA-TLX Mittelwert', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+```
+
+
+
+
+
+
+```{r}
+# check normal distribution assumption by plotting residuals
+aov_nasa.pr <- proj(sp_nasa_anova) 
+nasa_res <- aov_nasa.pr[[3]][, "Residuals"]
+
+qqnorm(nasa_res); qqline(nasa_res)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = nasa_res )
+
+# run Levene test for homogeneity of variance across groups
+leveneTest(df_nasa$NASATLX~df_nasa$group)
+```
+QQplot of the residuals indicates that the assumption of normal distribution is not met --> compute robust ANOVA.
+
+
+```{r}
+## robust ANOVA
+bwtrim(formula = NASATLX ~ group * trial, id = partnr, data = df_nasa)
+```
+
+
+### Resumption lags
+
+Analysing distribution characteristics for raw, log-transformed and inverted resumption lags indicate that resumption speed (1/resumption lags) has the best distribution characteristics and shall therefore be used for the subsequent analysis. The analysis revealed significant main effects of group and trial, which confirms the results of the analysis which includes the context-free experimental group. 
+```{r}
+# convert trial, group and subject number to factors
+df_long$trial <- factor(df_long$trial, levels=c(1,2,3), labels=c('1','2','3'))
+df_long$group <- factor(df_long$group)
+df_long$partnr <- factor(df_long$partnr)
+
+#transform the data
+df_long$reslags_speed <- 1/df_long$resumption_lags
+
+## compute split-plots anova for log-transformed resumption lags
+reslags_speed_anova <- aov(reslags_speed ~ trial*group + Error(partnr/(trial)), data=df_long)
+summary(reslags_speed_anova)
+```
+
+
+```{r}
+
+# check normal distribution assumption by plotting residuals
+aov_reslags_speed.pr <- proj(reslags_speed_anova)
+
+reslagspeed_res <- aov_reslags_speed.pr[[3]][, "Residuals"]
+
+qqnorm(reslagspeed_res); qqline(reslagspeed_res)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = reslagspeed_res )
+
+# run levene test for homogenity of variance across groups
+leveneTest(df_long$reslags_speed~df_long$group)
+
+```
+
+
+
+
+```{r}
+# plot resumption speed 
+# Boxplot for resumption speed per group
+
+ggplot(df_long,aes(x = group, y=reslags_speed) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "resumption speed",
+       title="resumption speed by group")
+
+# interaction plot
+interaction.plot(df_long$trial, df_long$group, df_long$reslags_speed, xlab = 'Task NR', ylab = 'resumption speed')
+```
+
+Post-hoc analyis using paired t-tests
+
+```{r}
+pwc <- df_long%>%
+  pairwise_t_test(
+    reslags_speed ~ trial, paired = TRUE,
+    p.adjust.method = "bonferroni"
+    )
+pwc
+```
+
+### List input lags
+
+Similar to the analysis of the full dataset, the analysis of list input lags between context-sensitive experimental group and control group yields no significant effects of group. Again, there is a trend that list input lags decrease over time which reaches significance in this case.
+```{r}
+## missing values per group
+aggregate(df_long$list_input_lags, by= list(df_long$group),FUN=function(x) {sum(is.na(x))} )
+
+## missing values per test participant
+aggregate(df_long$list_input_lags, by= list(df_long$partnr),FUN=function(x) {sum(is.na(x))} )
+
+## substitute values with median
+df_list_md <- df_long  %>% select(partnr, trial, group,list_input_lags)
+
+list_exp <- df_list_md$list_input_lags[which(df_list_md$group == "context-sensitive experimental group")]
+list_control <- df_list_md$list_input_lags[which(df_list_md$group == "control group")]
+md_exp <- median(list_exp, na.rm = TRUE)
+md_control <- median(list_control, na.rm = TRUE)
+
+# replace NA's with median
+df_list_md$list_input_lags[is.na(df_list_md$list_input_lags) & df_list_md$group == "context-sensitive experimental group"] <- md_exp
+df_list_md$list_input_lags[is.na(df_list_md$list_input_lags) & df_list_md$group == "control group"] <- md_control
+
+## check NA's
+## missing values per group
+aggregate(df_list_md$list_input_lags, by= list(df_list_md$group),FUN=function(x) {sum(is.na(x))} )
+```
+## Are there differences in how fast test participants make the the first order list entry after an interruption between groups and trials ?
+
+```{r}
+## compute split-plots anova for relative resumption lags
+inputlag_anova <- aov(list_input_lags ~ trial*group + Error(partnr/(trial)), data=df_list_md)
+summary(inputlag_anova)
+
+# check normal distribution assumption by plotting residuals
+aov_inputlag.pr <- proj(inputlag_anova) 
+inputlag_res <- aov_inputlag.pr[[3]][, "Residuals"]
+
+qqnorm(inputlag_res); qqline(inputlag_res)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = inputlag_res )
+
+
+# run levene test for homogeneity of variance across groups
+leveneTest(df_list_md$list_input_lags~df_list_md$group)
+```
+The tests indicate that the assumptions for ANOVA are met. 
+
+```{r}
+# plot interaction
+interaction.plot(df_list_md$`trial`, df_list_md$group, df_list_md$list_input_lags, xlab = 'trial', ylab = 'list input lags', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+
+# Boxplot for list input lag by group
+ggplot(df_list_md,aes(x = df_list_md$'group', y=df_list_md$list_input_lags) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "list input lag",
+       title="List input lag by group")
+
+```
+

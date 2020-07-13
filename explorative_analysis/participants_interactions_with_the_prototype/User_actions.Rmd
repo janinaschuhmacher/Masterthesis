@@ -1,0 +1,434 @@
+---
+title: "Analysing user interactions with the prototype"
+output: html_notebook
+---
+In this notebook, I analyse how participants interacted with the prototype during the experiment. This includes analysing the usage of each of the prototype's functions.
+
+## Include necessary packages and load data
+```{r}
+library(WRS2)
+library(rcompanion)
+library(feather)
+library(ggplot2)  
+library(ez)
+library(schoRsch)
+library(MASS)
+library(car)
+library(ggpubr)
+library(rstatix)
+library(tidyverse)
+library(here)
+```
+
+```{r}
+df <- read_feather(path = here('../../data_frames/results_test_02-04-2020_user_actions.file'))
+```
+
+
+## Prepare the data
+
+### Assign participants to the experimental group 
+* version 1 and 2 --> control group
+* version 3 und 4 --> experimental group context free
+* version 5 und 6--> experimental group context sensitive
+
+```{r}
+df$group <- ifelse((df$version == 5 | df$version == 6), 'context-sensitive experimental group', ifelse((df$version == 1 | df$version == 2), 'controlgroup', 'context-free experimental group'))
+```
+
+### Convert trial, group and subject number to factors in each dataframe
+```{r}
+df$trial <- factor(df$trial, levels = c("tutorial", "warm up", "trial 1", "trial 2", "trial 3"))
+df$group <- factor(df$group)
+df$partnr <- factor(df$partnr)
+```
+
+
+### subset df's 
+
+```{r}
+# df without tutorial and warm up tasks
+
+df_trial <- df[!(df$trial=="tutorial" | df$trial=="warm up"), ]
+```
+
+```{r}
+# user actions only for the control group
+
+df_control <- df_trial[(df_trial$group=="controlgroup"), ]
+```
+
+```{r}
+# user actions only for the context-free experimental group
+
+df_exp1 <- df_trial[(df_trial$group=="context-free experimental group"), ]
+```
+
+
+```{r}
+# user actions only for the context-sensitive experimental group
+
+df_exp2 <- df_trial[(df_trial$group=="context-sensitive experimental group"), ]
+```
+
+```{r}
+# user actions only for the experimental groups
+
+df_exp <- df_trial[!(df_trial$group=="controlgroup"), ]
+```
+
+```{r}
+# user actions for all trials, only experimental groups
+
+df <- df[!(df$group=="controlgroup"), ]
+
+```
+
+
+
+## Analyse how often participants interacted with the prototype (in total and per group)
+
+#### adding notes 
+
+##### in total
+```{r}
+sum(df_trial$add_note)
+sum(df_exp$add_note)
+mean(df_exp$add_note)
+sd(df_exp$add_note)
+max(df_trial$add_note)
+```
+##### per group across trials
+```{r}
+aggregate(df_exp$add_note, by=list(group = df_exp$group), FUN=mean)
+aggregate(df_exp$add_note, by=list(group = df_exp$group), FUN=sd)
+```
+##### per group for each trial
+```{r}
+aggregate(df$add_note, by=list(group = df$group, trial = df$trial), FUN=mean)
+aggregate(df$add_note, by=list(group = df$group, trial = df$trial), FUN=sd)
+```
+##### per trial across groups
+```{r}
+aggregate(df$add_note, by=list(trial = df$trial), FUN=mean)
+aggregate(df$add_note, by=list(trial = df$trial), FUN=sd)
+```
+
+##### Plots
+```{r}
+add_notes <- ggline(df, x = "trial", y ="add_note", 
+       add = c("mean_se"), 
+       color = "group", palette = c('darkgoldenrod2', 'darkcyan'), title = "usage of adding notes", 
+       ylab = "number of uses", 
+       legend = "none")
+ggpar(add_notes, ylim = c(0, 9))
+ggsave("plots_participants_interaction_with_prototype/add_notes.png")
+```
+```{r}
+c <- table(df_exp$add_note)
+c
+barplot(height = c, 
+        xlab = "nr of uses (per trial)", 
+ylab = "by how many participants", 
+main = "adding notes to the sidebar")
+```
+
+
+
+#### adding content to context
+
+##### in total
+```{r}
+sum(df_trial$add_to_context)
+mean(df_exp$add_to_context)
+sd(df_exp$add_to_context)
+max(df_trial$add_to_context)
+```
+##### per group across trials
+```{r}
+aggregate(df_exp$add_to_context, by=list(group = df_exp$group), FUN=mean)
+aggregate(df_exp$add_to_context, by=list(group = df_exp$group), FUN=sd)
+```
+##### per group for each trial
+```{r}
+aggregate(df$add_to_context, by=list(group = df$group, trial = df$trial), FUN=mean)
+aggregate(df$add_to_context, by=list(group = df$group, trial = df$trial), FUN=sd)
+```
+##### per trial across groups
+```{r}
+aggregate(df$add_to_context, by=list(trial = df$trial), FUN=mean)
+aggregate(df$add_to_context, by=list(trial = df$trial), FUN=sd)
+```
+##### Plots
+```{r}
+add_content <- ggline(df, x = "trial", y ="add_to_context", 
+       add = c("mean_se"), 
+       color = "group",        
+       palette = c('darkgoldenrod2', 'darkcyan')
+, 
+       title = "usage of adding content to the context ", 
+       legend = "none", ylab = "number of uses")
+
+ggpar(add_content, ylim = c(0, 9))
+
+ggsave("plots_participants_interaction_with_prototype/add_content.png")
+```
+
+```{r}
+c <- table(df_exp$add_to_context)
+c
+barplot(height = c, 
+        xlab = "nr of uses (per trial)", 
+ylab = "by how many participants", 
+main = "adding content to the sidebar")
+```
+
+
+#### removing content from the context
+
+##### in total
+```{r}
+sum(df_trial$remove_from_context)
+mean(df_exp$remove_from_context)
+max(df_trial$remove_from_context)
+sd(df_exp$remove_from_context)
+```
+
+
+per group across trials
+```{r}
+aggregate(df_exp$add_to_context, by=list(group = df_exp$group), FUN=mean)
+aggregate(df_exp$add_to_context, by=list(group = df_exp$group), FUN=sd)
+```
+per group for each trial
+```{r}
+aggregate(df$add_to_context, by=list(group = df$group, trial = df$trial), FUN=mean)
+aggregate(df$add_to_context, by=list(group = df$group, trial = df$trial), FUN=sd)
+```
+per trial across groups
+```{r}
+aggregate(df$add_to_context, by=list(trial = df$trial), FUN=mean)
+aggregate(df$add_to_context, by=list(trial = df$trial), FUN=sd)
+```
+##### Plots
+```{r}
+remove_content <- ggline(df, x = "trial", y ="remove_from_context", 
+       add = c("mean_se"), 
+       legend = "none", 
+       color = "group", palette = c('darkgoldenrod2', 'darkcyan'), title = "usage of removing content ", ylab = "number of uses")
+
+ggpar(remove_content, ylim = c(0, 9))
+
+```
+
+```{r}
+c <- table(df_exp$remove_from_context)
+c
+barplot(height = c, 
+        xlab = "nr of uses (per trial)", 
+ylab = "by how many participants", 
+main = "removing content from the context")
+```
+
+
+#### highlighting content
+
+##### in total
+```{r}
+sum(df_trial$highlights)
+mean(df_exp$highlights)
+max(df_trial$highlights)
+sd(df_trial$highlights)
+```
+
+##### per group across trials
+```{r}
+aggregate(df_exp$add_to_context, by=list(group = df_exp$group), FUN=mean)
+aggregate(df_exp$add_to_context, by=list(group = df_exp$group), FUN=sd)
+```
+##### per group for each trial
+```{r}
+aggregate(df$add_to_context, by=list(group = df$group, trial = df$trial), FUN=mean)
+aggregate(df$add_to_context, by=list(group = df$group, trial = df$trial), FUN=sd)
+```
+##### per trial across groups
+```{r}
+aggregate(df$add_to_context, by=list(trial = df$trial), FUN=mean)
+aggregate(df$add_to_context, by=list(trial = df$trial), FUN=sd)
+```
+##### Plots
+```{r}
+highlight <- ggline(df, x = "trial", y ="highlights", 
+       add = c("mean_se"), 
+       color = "group", palette = c('darkgoldenrod2', 'darkcyan'), 
+       title = "usage of highlight function "
+      , ylab = "number of uses", 
+       legend = "none")
+ggpar(highlight, ylim = c(0, 9))
+
+ggsave("plots_participants_interaction_with_prototype/highlight.png")
+```
+
+```{r}
+c <- table(df_exp$highlights)
+c
+barplot(height = c, 
+        xlab = "nr of uses (per trial)", 
+ylab = "by how many participants", 
+main = "opening websites from the sidebar")
+```
+##### open websites from sidebar
+
+##### in total
+```{r}
+sum(df_trial$open_website_from_sidebar)
+mean(df_exp$open_website_from_sidebar)
+max(df_trial$open_website_from_sidebar)
+sd(df_exp$open_website_from_sidebar)
+```
+
+##### per group across trials
+```{r}
+aggregate(df_exp$add_to_context, by=list(group = df_exp$group), FUN=mean)
+aggregate(df_exp$add_to_context, by=list(group = df_exp$group), FUN=sd)
+```
+##### per group for each trial
+```{r}
+aggregate(df$add_to_context, by=list(group = df$group, trial = df$trial), FUN=mean)
+aggregate(df$add_to_context, by=list(group = df$group, trial = df$trial), FUN=sd)
+```
+##### per trial across groups
+```{r}
+aggregate(df$add_to_context, by=list(trial = df$trial), FUN=mean)
+aggregate(df$add_to_context, by=list(trial = df$trial), FUN=sd)
+```
+##### Plots
+```{r}
+open_website <- ggline(df, x = "trial", y ="open_website_from_sidebar", 
+       add = c("mean_se"), 
+       color = "group", 
+       palette = c('darkgoldenrod2', 'darkcyan'), 
+       ylab = "number of uses", title = "usage of open website from the sidebar", 
+       legend = "none")
+
+ggpar(open_website, ylim = c(0, 9))
+
+ggsave("plots_participants_interaction_with_prototype/open_websites.png")
+```
+```{r}
+c <- table(df_exp$open_website_from_sidebar)
+c
+barplot(height = c, 
+        xlab = "nr of uses (per trial)", 
+ylab = "by how many participants", 
+main = "opening websites from the sidebar")
+```
+
+
+##### removing activities from the activity list
+
+##### in total
+```{r}
+sum(df_trial$remove_activity)
+sd(df_exp$remove_activity)
+mean(df_exp$remove_activity)
+max(df_trial$remove_activity)
+
+```
+
+##### per group across trials
+```{r}
+aggregate(df_exp$add_to_context, by=list(group = df_exp$group), FUN=mean)
+aggregate(df_exp$add_to_context, by=list(group = df_exp$group), FUN=sd)
+```
+##### per group for each trial
+```{r}
+aggregate(df$add_to_context, by=list(group = df$group, trial = df$trial), FUN=mean)
+aggregate(df$add_to_context, by=list(group = df$group, trial = df$trial), FUN=sd)
+```
+
+##### per trial across groups
+```{r}
+aggregate(df$add_to_context, by=list(trial = df$trial), FUN=mean)
+aggregate(df$add_to_context, by=list(trial = df$trial), FUN=sd)
+```
+
+##### Plots
+```{r}
+remove_activities <- ggline(df, x = "trial", y ="remove_activity", 
+       add = c("mean_se"), 
+       color = "group", palette = c('darkgoldenrod2', 'darkcyan'), 
+       title = "usage of removing activities from the acitivity list", 
+        ylab = "number of uses", 
+       legend = "none")
+
+ggpar(remove_activities, ylim = c(0, 9))
+
+ggsave("plots_participants_interaction_with_prototype/remove_activities.png")
+```
+
+```{r}
+c <- table(df_exp$remove_activity)
+c
+barplot(height = c, 
+        xlab = "nr of uses (per trial)", 
+ylab = "by how many participants", 
+main = "removing activities from the activity list")
+```
+
+
+##### removing notes
+
+##### in total
+```{r}
+sum(df_trial$remove_note)
+mean(df_exp$remove_note)
+max(df_trial$remove_note)
+sd(df_exp$remove_note)
+```
+
+
+##### per group across trials
+```{r}
+aggregate(df_exp$add_to_context, by=list(group = df_exp$group), FUN=mean)
+aggregate(df_exp$add_to_context, by=list(group = df_exp$group), FUN=sd)
+```
+##### per group for each trial
+```{r}
+aggregate(df$add_to_context, by=list(group = df$group, trial = df$trial), FUN=mean)
+aggregate(df$add_to_context, by=list(group = df$group, trial = df$trial), FUN=sd)
+```
+##### per trial across groups
+```{r}
+aggregate(df$add_to_context, by=list(trial = df$trial), FUN=mean)
+aggregate(df$add_to_context, by=list(trial = df$trial), FUN=sd)
+```
+
+##### Plots
+```{r}
+remove_notes <- ggline(df, x = "trial", y ="remove_note", 
+       add = c("mean_se"), 
+       color = "group", 
+       title = "usage of removing notes ", 
+       palette = c('darkgoldenrod2', 'darkcyan'), 
+       ylab = "number of uses", 
+       legend = "none"
+)
+
+ggpar(remove_notes, ylim = c(0, 9))
+
+ggsave("plots_participants_interaction_with_prototype/remove_notes.png")
+
+```
+
+```{r}
+c <- table(df_exp$remove_note)
+c
+barplot(height = c, 
+        xlab = "nr of uses (per trial)", 
+ylab = "by how many participants", 
+main = "removing a note from the sidebar")
+```
+
+
+

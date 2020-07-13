@@ -1,0 +1,150 @@
+---
+title: "Analyse demographic data"
+output: html_notebook
+---
+
+## Include necessary packages and load data
+```{r}
+library(WRS2)
+library(rcompanion)
+library(feather)
+library(ggplot2)  
+library(plyr)
+library(ez)
+library(schoRsch)
+library(MASS)
+library(car)
+library(ggpubr)
+library(rstatix)
+library(tidyverse)
+
+
+```
+
+We are loading three versions of our dataframe. df_wide has one row per participant. 
+```{r}
+df_wide <- read_feather(path = 'C:/Users/janin/Desktop/Studium/Masterarbeit/09_results_files/results_test_18-03-2020.file')
+```
+
+df_long has one row per trial per participant (so three rows per participant for interruption 1, 2, 3). 
+```{r}
+df_long <- read_feather(path = 'C:/Users/janin/Desktop/Studium/Masterarbeit/09_results_files/results_test_18-03-2020_messwdh.file')
+```
+
+df_nasa has four rows per particpant, one for each nasa-tlx test
+```{r}
+df_nasa <- read_feather(path = 'C:/Users/janin/Desktop/Studium/Masterarbeit/09_results_files/results_test_18-03-2020_messwdh_nasa.file')
+```
+
+## Prepare the data
+
+### Assign participants to the experimental group 
+* version 1 and 2 --> control group
+* version 3 und 4 --> experimental group context free
+* version 5 und 6--> experimental group context sensitive
+
+```{r}
+df_long$group <- ifelse((df_long$version == 5 | df_long$version == 6), 'context-sensitive experimental group', ifelse((df_long$version == 1 | df_long$version == 2), 'controlgroup', 'context-free experimental group'))
+
+df_nasa$group <- ifelse((df_nasa$version == 5 | df_nasa$version == 6), 'context-sensitive experimental group', ifelse((df_nasa$version == 1 | df_nasa$version == 2), 'controlgroup', 'context-free experimental group'))
+
+df_wide$group <- ifelse((df_wide$version == 5 | df_wide$version == 6), 'context-sensitive experimental group', ifelse((df_wide$version == 1 | df_wide$version == 2), 'controlgroup', 'context-free experimental group'))
+```
+
+### Count number of participants per experimental group
+```{r}
+count(df_wide, group)
+```
+
+### Convert trial, group and subject number to factors in each dataframe
+```{r}
+df_nasa$trial <- factor(df_nasa$trial, levels=c(0,1,2,3), labels=c('0','1','2','3'))
+df_nasa$group <- factor(df_nasa$group)
+df_nasa$partnr <- factor(df_nasa$partnr)
+
+df_wide$group <- factor(df_wide$group)
+df_wide$partnr <- factor(df_wide$partnr)
+
+df_long$trial <- factor(df_long$trial, levels=c(1,2,3), labels=c('1','2','3'))
+df_long$group <- factor(df_long$group)
+df_long$partnr <- factor(df_long$partnr)
+```
+
+### Rename categories for demographic data
+```{r}
+#gender
+df_wide$gender[df_wide$gender == 'mÃ¤nnlich'] <- 'männlich'
+
+#termsofstudies
+df_wide$termsOfStudies[df_wide$termsOfStudies == 'BetriebsÃ¤rztin' | df_wide$termsOfStudies == 'Arzt'] <- 'berufstätig: Arzt/Ärztin'
+df_wide$termsOfStudies[df_wide$termsOfStudies == 'Bachelor Psychologie' | df_wide$termsOfStudies == 'Psychologie-Student' | df_wide$termsOfStudies == 'Psychologie (B.Sc.)' | df_wide$termsOfStudies == 'Pychologie' | df_wide$termsOfStudies == 'Master Psychologie'] <- 'Psychologie'
+df_wide$termsOfStudies[df_wide$termsOfStudies == 'Erziehungswissenschaft' ] <- 'Erziehungswissenschaften'
+df_wide$termsOfStudies[df_wide$termsOfStudies == 'International Business FranzÃ¶sisch' ] <- 'International Business Französisch'
+df_wide$termsOfStudies[df_wide$termsOfStudies == 'Sozial-und OrganisationspÃ¤dagogik' ] <- 'Sozial-und Organisationspädagogik'
+df_wide$termsOfStudies[df_wide$termsOfStudies == 'SozialpÃ¤dagogik' ] <- 'Sozialpädagogik'
+df_wide$termsOfStudies[df_wide$termsOfStudies == 'Umwelt-Biowissenschaften' ] <- 'Umweltbiowissenschaften'
+df_wide$termsOfStudies[df_wide$termsOfStudies == 'Prozessdynamik an der ErdoberflÃ¤che' ] <- 'Prozessdynamik an der Erdoberfläche'
+
+## usage of technology
+df_wide$techUsage[df_wide$techUsage == 'zwischen 2 und 6 Stunden tÃ¤glich' ] <- 'zwischen 2 und 6 Stunden täglich'
+df_wide$techUsage[df_wide$techUsage == 'mehr als 6 Stunden tÃ¤glich' ]<- 'mehr als 6 Stunden täglich'
+df_wide$techUsage[df_wide$techUsage == 'zwischen einer halben und 2 Stunden tÃ¤glich' ]<- 'zwischen einer halben und 2 Stunden täglich'
+```
+
+## Analyse demographic data
+
+### Gender
+Count total number of partcipants' responses.
+```{r}
+df_wide %>% count(gender)
+```
+Count participants' responses per group.
+```{r}
+df_wide %>% group_by(group) %>% count(gender)
+```
+
+### Studies
+```{r}
+count(df_wide, termsOfStudies)
+```
+
+### Age
+Compute average age and standard deviation
+```{r}
+mean(df_wide$age)
+sd(df_wide$age)
+
+```
+
+
+
+Compute average age per group
+```{r}
+tapply(df_wide$age, df_wide$group, mean)
+```
+
+
+### Technology usage
+
+Count how number of answers per category of technology usage
+```{r}
+sum(df_wide$`Technologienutzung: Arbeiten mit Office Programmen (Word, Excel, Powerpoint, etc.)`)
+sum(df_wide$`Technologienutzung: Email / im Internet surfen (z.B. Facebook, Spiegel Online, etc.)`)
+sum(df_wide$`Technologienutzung: Programmieren`)
+sum(df_wide$`Technologienutzung: studienbezogene Aufgaben (z.B. Vorlesungen nachbereiten, Hausarbeiten schreiben, Literaturrecherche, etc.)`)
+table(df_wide$`Technologienutzung: Sonstiges`)
+```
+
+
+
+### Technology Usage: Hours per day
+```{r}
+table(df_wide$techUsage)
+```
+
+
+
+Plot usage of technology
+```{r}
+barplot(c(14, 32, 9), col = c("lightblue", "mistyrose", "cornsilk"), names.arg = c('> 6 h/Tag', '2 - 6 h/Tag', '0.5 - 2h/Tag'), ylab = 'Anzahl VP')
+```

@@ -1,0 +1,485 @@
+---
+title: "TAEG"
+output: html_notebook
+---
+In this notebook, I analyze if the technology affinity as measured by the TA-EG differs between groups and if the TA-EG scores are related to other variables, including NASA-TLX, performance and TA-EG. 
+
+
+## Include necessary packages 
+```{r}
+library(WRS2)
+library(rcompanion)
+library(feather)
+library(ggplot2)  
+library(ez)
+library(schoRsch)
+library(MASS)
+library(car)
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+
+```
+
+
+## Load data
+
+We are loading the experimental data in wide format. 
+
+```{r}
+df_wide <- read_feather(path = here('../../data_frames/results_test_18-03-2020.file'))
+```
+
+
+
+
+## Prepare the data
+
+### Assign participants to the experimental group 
+* version 1 and 2 --> control group
+* version 3 und 4 --> experimental group context free
+* version 5 und 6--> experimental group context sensitive
+
+```{r}
+df_wide$group <- ifelse((df_wide$version == 5 | df_wide$version == 6), 'context-sensitive experimental group', ifelse((df_wide$version == 1 | df_wide$version == 2), 'controlgroup', 'context-free experimental group'))
+```
+
+
+```{r}
+# Convert trial, group and subject number to factors in each dataframe
+df_wide$group <- factor(df_wide$group)
+df_wide$partnr <- factor(df_wide$partnr)
+```
+
+
+
+## Data Analysis
+### Are there differences between the groups?
+
+There are no signficant differences neither for the overall TAEG value nor for the subscales. 
+```{r}
+df_wide %>% group_by(group) %>% summarise(taeg_groups = mean(TAEG),
+            taeg_sd = (sd(TAEG)/sqrt(length(TAEG))))
+```
+
+```{r}
+plot(df_wide$TAEG)
+
+## plot TA-EG mean
+ggplot(df_wide,aes(x = group, y=TAEG) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "TA-EG results",
+       title="TA-EG overall value by group")
+
+## no significant group differences
+kruskal.test(TAEG ~ group, data = df_wide)
+```
+
+
+#### TA-EG subscale enthusiasm
+```{r}
+ggplot(df_wide,aes(x = group, y=taeg_enthusiasm) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "TA-EG subscale enthusiasm",
+       title="TA-EG subscale enthusiasm")
+
+kruskal.test(taeg_enthusiasm ~ group, data = df_wide)
+```
+
+
+#### TA-EG subscale competence
+```{r}
+ggplot(df_wide,aes(x = group, y=taeg_competence) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "TA-EG subscale competence",
+       title="TA-EG subscale competence")
+
+kruskal.test(taeg_competence ~ group, data = df_wide)
+```
+
+
+#### TA-EG subscale positive attitude
+```{r}
+ggplot(df_wide,aes(x = group, y=taeg_pos_attitude) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "TA-EG subscale positive attitude",
+       title="TA-EG subscale postive attitude")
+
+kruskal.test(taeg_pos_attitude ~ group, data = df_wide)
+```
+
+
+#### TA-EG subscale negative attitude
+```{r}
+ggplot(df_wide,aes(x = group, y=taeg_neg_attitude) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "TA-EG subscale negative attitude",
+       title="TA-EG subscale negative attitude")
+
+kruskal.test(taeg_neg_attitude ~ group, data = df_wide)
+```
+
+
+### Is there a relation between TA-EG scores and performance?
+
+
+#### Correlation with nr of mistakes / entries after first interruption
+
+```{r}
+#calculate the measures
+
+df_wide <- transform(df_wide, perf = mistakes_after_interruption / entries_after_interruption)
+```
+
+
+There is no significant correlation between TAEG mean and performance.
+```{r}
+plot(df_perf$perf~df_perf$TAEG)
+cor.test(df_perf$perf, df_perf$TAEG, method = 'pearson')
+```
+
+
+##### TA-EG subscale enthusiasm (n.s.)
+
+
+
+```{r}
+plot(df_perf$perf~df_perf$taeg_enthusiasm)
+cor.test(df_perf$perf, df_perf$taeg_enthusiasm, method = 'pearson')
+```
+
+
+##### TA-EG subscale competence (n.s.)
+
+
+```{r}
+plot(df_perf$perf~df_perf$taeg_competence)
+cor.test(df_perf$perf, df_perf$taeg_enthusiasm, method = 'pearson')
+```
+
+
+##### TA-EG subscale positive attitude (n.s.)
+
+
+```{r}
+plot(df_perf$perf~df_perf$taeg_pos_attitude)
+cor.test(df_perf$perf, df_perf$taeg_pos_attitude, method = 'pearson')
+```
+
+
+##### TA-EG subscale positive attitude (n.s.)
+
+```{r}
+plot(df_perf$perf~df_perf$taeg_neg_attitude)
+cor.test(df_perf$perf, df_perf$taeg_neg_attitude, method = 'pearson')
+```
+
+
+## influence on NASA-TLX values
+
+
+There is a significant correlation between participants' mean NASA-TLX score and their TA-EG score
+```{r}
+library(matrixStats)
+```
+
+#### overall NASA-TLX score
+```{r}
+nasa <- cbind(df_wide$NASATLX_1, df_wide$NASATLX_2, df_wide$NASATLX_3, df_wide$NASATLX_4)
+df_wide$NASATLX_mean <- rowMeans2(nasa)
+
+cor.test(df_wide$TAEG, df_wide$NASATLX_mean, method = 'pearson')
+```
+##### subscale enthusiasm (n.s.)
+```{r}
+cor.test(df_wide$taeg_enthusiasm, df_wide$NASATLX_mean, method = 'pearson')
+```
+subscale competence (p = .038)
+```{r}
+cor.test(df_wide$taeg_competence, df_wide$NASATLX_mean, method = 'pearson')
+```
+##### subscale positive attitude (n.s.)
+```{r}
+cor.test(df_wide$taeg_pos_attitude, df_wide$NASATLX_mean, method = 'pearson')
+```
+#### subscale negative attitude (p = .046)
+```{r}
+cor.test(df_wide$taeg_neg_attitude, df_wide$NASATLX_mean, method = 'pearson')
+```
+
+```{r}
+par(mgp=c(2,1,0), mar=c(3,3,1,1))
+# Fit regression line
+require(stats)
+reg<-lm(df_wide$NASATLX_mean~df_wide$TAEG)
+coeff=coefficients(reg)
+# equation of the line : 
+eq = paste0("y = ", round(coeff[2],1), "*x ", round(coeff[1],1))
+# plot
+plot(df_wide$NASATLX_mean~df_wide$TAEG, main=eq, ylab = "NASA-TLX mean score", xlab = "TA-EG score", title = "Correlation between NASA-TLX and TA-EG score") + abline(reg, col="blue") 
+```
+
+#### warm up task (n.s.)
+
+```{r}
+plot(df_wide$TAEG~df_wide$NASATLX_1)
+cor.test(df_wide$TAEG,df_wide$NASATLX_1, method = 'pearson')
+```
+
+##### subscale taeg_enthusiasm (n.s.)
+```{r}
+plot(df_wide$NASATLX_1  ~df_wide$taeg_enthusiasm)
+cor.test(df_wide$taeg_enthusiasm,df_wide$NASATLX_1, method = 'pearson')
+```
+
+##### subscale taeg_competence (n.s.)
+```{r}
+plot(df_wide$NASATLX_1~df_wide$taeg_competence)
+cor.test(df_wide$taeg_competence,df_wide$NASATLX_1, method = 'pearson')
+```
+
+##### subscale taeg_pos_attitude (n.s.) 
+```{r}
+plot(df_wide$NASATLX_1~df_wide$taeg_pos_attitude)
+cor.test(df_wide$taeg_pos_attitude,df_wide$NASATLX_1, method = 'pearson')
+```
+
+##### subscale taeg_neg_attitude (p = .023)
+
+```{r}
+par(mgp=c(2,1,0), mar=c(3,3,1,1))
+# Fit regression line
+require(stats)
+reg<-lm(df_wide$NASATLX_1~df_wide$taeg_neg_attitude)
+coeff=coefficients(reg)
+# equation of the line : 
+eq = paste0("y = ", round(coeff[2],1), "*x ", round(coeff[1],1))
+# plot
+plot(df_wide$NASATLX_1~df_wide$taeg_neg_attitude, main=eq) + abline(reg, col="blue")
+
+
+cor.test(df_wide$taeg_neg_attitude,df_wide$NASATLX_1, method = 'pearson')
+```
+
+
+
+
+
+#### first trial
+
+
+no significant correlation
+```{r}
+plot(df_wide$TAEG~df_wide$NASATLX_2)
+cor.test(df_wide$TAEG,df_wide$NASATLX_2, method = 'pearson')
+```
+
+
+##### subscale taeg_enthusiasm (n.s.)
+```{r}
+plot(df_wide$NASATLX_2  ~df_wide$taeg_enthusiasm)
+cor.test(df_wide$taeg_enthusiasm,df_wide$NASATLX_2, method = 'pearson')
+```
+
+
+##### subscale taeg_competence (n.s.)
+```{r}
+plot(df_wide$NASATLX_2~df_wide$taeg_competence)
+cor.test(df_wide$taeg_competence,df_wide$NASATLX_2, method = 'pearson')
+```
+
+
+##### subscale taeg_pos_attitude (n.s.)
+```{r}
+plot(df_wide$NASATLX_2~df_wide$taeg_pos_attitude)
+cor.test(df_wide$taeg_pos_attitude,df_wide$NASATLX_2, method = 'pearson')
+```
+
+
+##### subscale taeg_neg_attitude (n.s.)
+```{r}
+plot(df_wide$NASATLX_2~df_wide$taeg_neg_attitude)
+cor.test(df_wide$taeg_neg_attitude,df_wide$NASATLX_2, method = 'pearson')
+
+```
+
+
+#### second trial (p = .013)
+
+
+
+significant positive correlation
+```{r}
+plot(df_wide$TAEG~df_wide$NASATLX_3) + abline(lm(df_wide$TAEG~df_wide$NASATLX_3), col = 'blue')
+cor.test(df_wide$TAEG,df_wide$NASATLX_3, method = 'pearson')
+```
+
+
+
+##### subscale taeg_enthusiasm (n.s.)
+```{r}
+plot(df_wide$NASATLX_3  ~df_wide$taeg_enthusiasm)
+cor.test(df_wide$taeg_enthusiasm,df_wide$NASATLX_3, method = 'pearson')
+```
+
+
+subscale taeg_competence (p <.01)
+```{r}
+plot(df_wide$NASATLX_3~df_wide$taeg_competence)
+cor.test(df_wide$taeg_competence,df_wide$NASATLX_3, method = 'pearson')
+```
+
+
+##### subscale taeg_pos_attitude (n.s.)
+```{r}
+plot(df_wide$NASATLX_3~df_wide$taeg_pos_attitude)
+cor.test(df_wide$taeg_pos_attitude,df_wide$NASATLX_3, method = 'pearson')
+```
+
+
+##### subscale taeg_neg_attitude (n.s.)
+```{r}
+plot(df_wide$NASATLX_3~df_wide$taeg_neg_attitude)
+cor.test(df_wide$taeg_neg_attitude,df_wide$NASATLX_3, method = 'pearson')
+```
+
+
+#### fourth trial (p = .014)
+
+
+```{r}
+plot(df_wide$TAEG~df_wide$NASATLX_4) + abline(lm(df_wide$TAEG~df_wide$NASATLX_4), col = "blue")
+cor.test(df_wide$TAEG,df_wide$NASATLX_4, method = 'pearson')
+```
+##### subscale enthusiasm (n.s.)
+```{r}
+plot(df_wide$NASATLX_4  ~df_wide$taeg_enthusiasm)
+cor.test(df_wide$taeg_enthusiasm,df_wide$NASATLX_4, method = 'pearson')
+```
+
+
+##### subscale competence (p = .029)
+```{r}
+plot(df_wide$NASATLX_4~df_wide$taeg_competence)
+cor.test(df_wide$taeg_competence,df_wide$NASATLX_4, method = 'pearson')
+```
+
+
+##### subscale positive attitude (n.s.)
+```{r}
+plot(df_wide$NASATLX_4~df_wide$taeg_pos_attitude)
+cor.test(df_wide$taeg_pos_attitude,df_wide$NASATLX_4, method = 'pearson')
+```
+
+
+##### subscale negative attitude (p = .029)
+```{r}
+plot(df_wide$NASATLX_4~df_wide$taeg_neg_attitude)
+cor.test(df_wide$taeg_neg_attitude,df_wide$NASATLX_4, method = 'pearson')
+```
+
+
+### Influence on resumption speed
+
+```{r}
+#Transform the data
+
+df_wide$res_speed_1 <- 1/df_wide$resumption_lag_1
+df_wide$res_speed_2 <- 1/df_wide$resumption_lag_2
+df_wide$res_speed_3 <- 1/df_wide$resumption_lag_3
+```
+
+
+```{r}
+# Calculate the mean resumption speed
+resumption <- cbind(df_wide$res_speed_1, df_wide$res_speed_2, df_wide$res_speed_3)
+df_wide$res_speed_mean <- rowMeans2(resumption)
+```
+
+```{r}
+# Computing the correlation 
+
+cor.test(df_wide$TAEG, df_wide$res_speed_mean, method = 'pearson')
+```
+
+
+##### first trial
+
+```{r}
+plot(df_wide$TAEG~df_wide$res_speed_1)
+cor.test(df_wide$TAEG,df_wide$res_speed_1, method = 'pearson')
+```
+
+
+
+
+#### second trial (n.s.)
+```{r}
+plot(df_wide$TAEG~df_wide$res_speed_2)
+cor.test(df_wide$TAEG,df_wide$res_speed_2, method = 'pearson')
+```
+
+
+#### third trial (n.s.)
+```{r}
+plot(df_wide$TAEG~df_wide$res_speed_3)
+cor.test(df_wide$TAEG,df_wide$res_speed_3, method = 'pearson')
+```
+
+### influence on list input lag after the first trial (n.s.)
+```{r}
+cor.test(df_wide$TAEG,df_wide$list_input_lag_1)
+```
+
+
+### influence on list input lag after the second trial (n.s.)
+```{r}
+cor.test(df_wide$TAEG,df_wide$list_input_lag_2)
+```
+
+### influence on list input lag after the third trial (p = .037)
+```{r}
+cor.test(df_wide$TAEG,df_wide$list_input_lag_3)
+plot(df_wide$TAEG ~ df_wide$list_input_lag_3)
+```
+
+
+
+## influence on purposeful action lags (n.s.)
+
+```{r}
+#prepare the data
+
+## dataframe without control group
+df_exp <- df_wide[!(df_wide$group=="controlgroup"),]
+
+# convert group and trial to factors
+df_exp$group <- factor(df_exp$group)
+
+df_exp$ppa_log_1 <- log(df_exp$purposeful_action_lag_1)
+df_exp$ppa_log_2 <- log(df_exp$purposeful_action_lag_2)
+df_exp$ppa_log_3 <- log(df_exp$purposeful_action_lag.3)
+```
+
+
+
+```{r}
+cor.test(df_exp$TAEG,df_exp$ppa_log_1)
+cor.test(df_exp$TAEG,df_exp$ppa_log_2)
+cor.test(df_exp$TAEG,df_exp$ppa_log_3)
+
+```
+
+
+
+

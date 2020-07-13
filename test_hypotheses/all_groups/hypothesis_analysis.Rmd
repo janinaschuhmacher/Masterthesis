@@ -1,0 +1,1050 @@
+---
+title: "Analysis of Hypotheses in R"
+output: html_notebook
+---
+This notebook includes the statistical hypothesis tests for all groups.
+
+## Load necessary packages
+```{r}
+library(WRS2)
+library(rcompanion)
+library(feather)
+library(ggplot2)  
+library(ez)
+library(schoRsch)
+library(MASS)
+library(car)
+library(ggpubr)
+library(rstatix)
+library(DescTools)
+library(tidyverse)
+library(nlme)
+library(lsmeans)
+library(here)
+```
+
+## Load the data
+
+We are loading three versions of our dataframe. df_wide has one row per participant. 
+```{r}
+df_wide <- read_feather(path = here('../../data_frames/results_test_18-03-2020.file'))
+```
+  
+  
+  
+df_long has one row per trial per participant (so three rows per participant for interruption 1, 2, 3). 
+```{r}
+df_long <- read_feather(path = here('../../data_frames/results_test_18-03-2020_messwdh.file'))
+```
+
+df_nasa has four rows per particpant, one for each nasa-tlx test
+```{r}
+df_nasa <- read_feather(path = here('../../data_frames/results_test_18-03-2020_messwdh_nasa.file'))
+```
+
+## Prepare the data
+
+### Assign participants to the experimental group 
+* version 1 and 2 --> control group
+* version 3 und 4 --> context-free experimental group 
+* version 5 und 6--> context-sensitive experimental group
+
+```{r}
+df_long$group <- ifelse((df_long$version == 5 | df_long$version == 6), 'context-sensitive experimental group', ifelse((df_long$version == 1 | df_long$version == 2), 'control group', 'context-free experimental group'))
+
+df_nasa$group <- ifelse((df_nasa$version == 5 | df_nasa$version == 6), 'context-sensitive experimental group', ifelse((df_nasa$version == 1 | df_nasa$version == 2), 'control group', 'context-free experimental group'))
+
+df_wide$group <- ifelse((df_wide$version == 5 | df_wide$version == 6), 'context-sensitive experimental group', ifelse((df_wide$version == 1 | df_wide$version == 2), 'control group', 'context-free experimental group'))
+```
+
+
+
+### Check if the design is balanced
+```{r}
+count(df_wide, group)
+```
+
+
+
+### Convert trial, group and subject number to factors in each dataframe
+```{r}
+df_nasa$trial <- factor(df_nasa$trial, levels=c(0,1,2,3), labels=c('0','1','2','3'))
+df_nasa$group <- factor(df_nasa$group)
+df_nasa$partnr <- factor(df_nasa$partnr)
+
+df_wide$group <- factor(df_wide$group)
+df_wide$partnr <- factor(df_wide$partnr)
+
+df_long$trial <- factor(df_long$trial, levels=c(1,2,3), labels=c('1','2','3'))
+df_long$group <- factor(df_long$group)
+df_long$partnr <- factor(df_long$partnr)
+```
+
+
+## Testing Hypotheses
+
+### Performance 
+
+None of the measures yielded any significant results, neither when outliers were excluded nor when they were not excluded. 
+Overall, it seems that the task was very difficult for participants: They commited a lot of mistakes and achieved few right answers. Additionally, a lot of participants only worked with part of the information and ignored or missed further sources of information which could be due to information overload.
+
+
+#### Correct entries
+There was no significant effect for the number of correct entries.
+Trend: context-free group achieved on average less correct entries than the other two groups.
+
+#### Descriptive data
+```{r}
+aggregate( correct_entries_after_interruption ~ group, df_wide, mean )
+aggregate( correct_entries_after_interruption ~ group, df_wide, sd )
+```
+
+##### Plot means of correct entries between groups
+
+```{r}
+plot_correct_entries = ggbarplot(df_wide, x = "group", y = "correct_entries_after_interruption", 
+          add = c("mean_se"), 
+          fill = c('darkgoldenrod2', 'darkcyan', 'darkred'), 
+          title = "Number of correct entries by group", 
+          xlab = "Group",
+          ylab = "Number of correct entries in the order list"
+          )
+
+plot_correct_entries
+ggsave("plots_hypothesis_tests/correct_entries_per_groups.png", height = 5, width=10)
+```
+
+##### Boxplots of correct entries 
+
+
+```{r}
+# boxplots
+ggplot(df_wide,aes(x = group, y=correct_entries_after_interruption) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "correct entries",
+       title="correct entries by group")
+
+ggsave("plots_hypothesis_tests/correct_entries_boxplot.png", height = 5, width=7)
+```
+
+##### Test requirements for ANOVA
+* normal distribution
+* variance homogenity
+
+Set up linear model for correct_entries ~ groups
+```{r}
+lm_cor_entries <- lm(df_wide$correct_entries_after_interruption~ df_wide$group)
+```
+
+QQ-plot studentized residuals
+```{r}
+rstudent_cor_entries <- rstudent(lm_cor_entries)
+qqnorm(rstudent_cor_entries); qqline(rstudent_cor_entries)
+```
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(x = rstudent_cor_entries )
+```
+
+Test homogenity of variances
+```{r}
+leveneTest(df_wide$correct_entries_after_interruption~df_wide$group)
+```
+The tests indicate that the data is normally distributed with equal variances. Therefore, we can compute an analysis of variance.
+
+##### ANOVA (n.s.)
+Set SS to 3 because the data is unbalanced 
+```{r}
+anova_correct_entries <- ezANOVA(
+  data = df_wide, 
+  dv = correct_entries_after_interruption, 
+  wid = partnr,
+  between = group, 
+  type = 3, 
+  detailed = TRUE, 
+  return_aov = TRUE)
+
+anova_out(anova_correct_entries)
+summary(anova_correct_entries$aov)
+```
+
+
+#### Mistakes
+There are no significant effects for the number of mistakes.
+
+#### Descriptive data
+```{r}
+aggregate( mistakes_after_interruption ~ group, df_wide, mean )
+aggregate( mistakes_after_interruption ~ group, df_wide, sd )
+```
+
+##### Create boxplots of mistakes before removing outliers
+```{r}
+boxp_mistakes = ggplot(df_wide,aes(x = group, y= mistakes_after_interruption) ) +
+  theme_classic() +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="Group",
+       y = "Incorrect order list entries",
+       title="Boxplots of incorrect order list entries by group")
+
+print(boxp_mistakes)
+
+ggsave("plots_hypothesis_tests/mistakes_boxplot.png", height = 5, width=7)
+```
+
+##### Plot means of mistakes (before removing outliers) between groups
+
+
+Plot including error bars
+```{r}
+plot_mistakes = ggbarplot(df_wide, x = "group", y = "mistakes_after_interruption", 
+          add = c("mean_se"), 
+          fill = c('darkgoldenrod2', 'darkcyan', 'darkred'), 
+          title = "Number of mistakes by group", 
+          xlab = "Group",
+          ylab = "Number of mistakes in the order list"
+          )
+
+plot_mistakes
+```
+
+##### Remove outliers
+By re-watching the screen recordings and comparing with the experimental protocol, I analyzed what caused outliers. When looking at the number of mistakes that participants commit during the experimental task, there are two outliers (further than three standard deviations from the median): Test participants 26 and 11. The log of the order list inputs reveals that these test participants filled out all the amounts wrong (and, consequently, all the prizes). 
+Watching the screen recording confirms that the participants never opened the document which contained the information about required amounts. Thus, both test particpants are excluded for the analysis of the mistakes.
+```{r}
+aggregate(mistakes_after_interruption ~ group, df_wide, mean)
+aggregate(mistakes_after_interruption ~ group, df_wide, sd)
+
+exclude <- list(11, 26)
+df_perf <- subset(df_wide, !(df_wide$partnr %in% exclude))
+```
+
+
+##### Test requirements for ANOVA
+
+Set up linear model for mistakes_after_interruption ~ groups
+```{r}
+lm_mistakes <- lm(df_perf$mistakes_after_interruption~ df_perf$group)
+```
+
+Get studentized residuals
+```{r}
+rstudent_mistakes <- rstudent(lm_mistakes)
+qqnorm(rstudent_mistakes); qqline(rstudent_mistakes)
+```
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(x = rstudent_mistakes )
+```
+
+Test homogenity of variances
+```{r}
+leveneTest(df_perf$mistakes_after_interruption~df_perf$group)
+```
+
+The QQplots and Shapiro-Wilk test indicate that the data is not normally distributed. 
+Thus, we have to use the Krusal-Wallis Rank Sum Test rather than ANOVA.
+
+##### Krusal-Wallis Rank Sum Test (n.s.)
+We compute the Kruskal-Wallis Rank Sum Test after we removed the outliers.
+
+```{r}
+kruskaltest_mistakes <- kruskal.test(formula = mistakes_after_interruption~group,
+                                     data = df_perf)
+kruskaltest_mistakes
+```
+
+As a sensitivity analysis, we compare the test results with the data which includes the outliers.
+
+```{r}
+kruskaltest_mistakes_o <- kruskal.test(formula = mistakes_after_interruption~group,
+                                     data = df_wide)
+kruskaltest_mistakes_o
+```
+Neither test shows any significant results.  
+  
+  
+##### Plot means of mistakes (after removing outliers) between groups
+
+Descriptive statistics
+```{r}
+aggregate(mistakes_after_interruption ~ group, df_perf, mean)
+aggregate(mistakes_after_interruption ~ group, df_perf, sd)
+```
+
+```{r}
+plot_mistakes_o = ggbarplot(df_perf, x = "group", y = "mistakes_after_interruption", 
+          add = c("mean_se"), 
+          fill = c('darkgoldenrod2', 'darkcyan', 'darkred'), 
+          title = "Number of mistakes by group", 
+          xlab = "Group",
+          ylab = "Number of mistakes in the order list"
+          )
+
+plot_mistakes_o
+
+ggsave("plots_hypothesis_tests/mistakes_per_groups.png", height = 5, width=10)
+```
+
+##### Boxplots of mistakes after removing outliers
+```{r}
+par(bg = "white")
+
+boxplot_mistakes = 
+  ggplot(df_perf,aes(x = group, y= mistakes_after_interruption) ) +
+  theme_classic() + 
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="Group",
+       y = "Incorrect entries per total entries",
+       title="Boxplots of mistakes by group")
+
+
+print(boxplot_mistakes)
+```
+
+
+#### Ratio of mistakes to total amount of entries
+Statistical analysis reveals no significant effect.
+
+Compute measure
+```{r}
+df_wide <- transform(df_wide, perf = mistakes_after_interruption / entries_after_interruption)
+
+aggregate(perf ~ group, df_wide, mean)
+aggregate(perf ~ group, df_wide, sd)
+```
+
+##### Boxplots of ratio of mistakes to total amount of entries
+```{r}
+par(bg = "white")
+
+ggplot(df_wide,aes(x = group, y=perf) ) +
+  geom_boxplot() + 
+  
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="Group",
+       y = "Incorrect entries per total entries",
+       title="Boxplots of  mistakes per total entries by group")
+
+ggsave("plots_hypothesis_tests/perf_boxplot.png", height = 5, width=7)
+```
+
+Plot including error bars
+```{r}
+plot_perf = ggbarplot(df_wide, x = "group", y = "perf", 
+          add = c("mean_se"), 
+          fill = c('darkgoldenrod2', 'darkcyan', 'darkred'), 
+          title = "Number of mistakes per total number of entries by group", 
+          xlab = "Group",
+          ylab = "Number of mistakes per entries"
+          )
+
+plot_perf
+
+```
+
+##### Exclude outliers
+Following the argumentation from above, the values for test participants 26 and 11 shall be removed. 
+```{r}
+exclude <- list(11, 26)
+df_perf <- subset(df_wide, !(df_wide$partnr %in% exclude))
+
+aggregate(perf ~ group, df_perf, mean)
+aggregate(perf ~ group, df_perf, sd)
+```
+
+##### Test requirements for ANOVA
+Set up lineare model for perf ~ groups
+```{r}
+lm_perf <- lm(df_perf$perf~ df_perf$group)
+```
+
+Get studentized residuals
+```{r}
+rstudent_perf <- rstudent(lm_perf)
+qqnorm(rstudent_perf); qqline(rstudent_perf)
+```
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(x = rstudent_perf )
+```
+
+Test homogenity of variances
+```{r}
+leveneTest(perf~group,  data = df_perf)
+```
+
+The QQplots and Shapiro-Wilk test indicate that the data is not normally distributed. 
+Thus, we have to use the Krusal-Wallis Rank Sum Test rather than ANOVA.
+
+##### Krusal-Wallis Rank Sum Test (n.s.)
+
+We compute the Kruskal-Wallis Rank Sum Test after we removed the outliers. 
+```{r}
+kruskaltest_perf <-kruskal.test(df_perf$perf~ df_perf$group)
+kruskaltest_perf
+```
+
+As a sensitivity analysis, we compare the test results with the data which includes the outliers. 
+```{r}
+kruskaltest_perf_o <-kruskal.test(df_wide$perf~ df_wide$group)
+kruskaltest_perf_o
+```
+
+Both tests show no significant results. 
+
+##### Plot means of ratio of mistakes to all entries between groups (after removing outliers)
+
+Descriptive analysis
+```{r}
+mean_perf <- tapply(df_perf$perf, df_perf$group, mean)
+tapply(df_perf$perf, df_perf$group, sd)
+```
+
+
+
+
+
+```{r}
+plot_perf_o = ggbarplot(df_perf, x = "group", y = "perf", 
+          add = c("mean_se"), 
+          fill = c('darkgoldenrod2', 'darkcyan', 'darkred'), 
+          title = "Number of mistakes per total number of entries by group", 
+          xlab = "Group",
+          ylab = "Number of mistakes per entries"
+          )
+
+plot_perf_o
+
+ggsave("plots_hypothesis_tests/perf_per_groups.png", height = 5, width=10)
+```
+
+
+### NASA-TLX
+Does mental workload when working on the primary task differ between groups and over time?
+
+
+##### Check requirements for ANOVA
+
+Compute ezANOVA to extract residuals using SS = 3 because the data is unbalanced
+```{r}
+ez_nasa_anova = ezANOVA(
+data = df_nasa
+, dv = NASATLX
+, wid = partnr
+, within = trial
+, between = group
+, detailed = TRUE
+, type = 3
+, return_aov = TRUE
+)
+
+anova_out(ez_nasa_anova)
+```
+
+Check normal distribution assumption by plotting residuals
+```{r}
+aov_nasa.pr <- proj(ez_nasa_anova$aov) 
+nasa_res <- aov_nasa.pr[[3]][, "Residuals"]
+qqnorm(nasa_res); qqline(nasa_res)
+```
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(x = nasa_res )
+```
+
+
+Run Levene test for homogeneity of variance across groups (n.s.)
+```{r}
+leveneTest(df_nasa$NASATLX~df_nasa$group)
+```
+QQplot of the residuals indicates that the assumption of normal distribution is not met. Therefore, we compute robust ANOVA. 
+
+
+##### Compute robust ANOVA
+significant main effect of trial
+```{r}
+bwtrim(formula = NASATLX ~ group * trial, id = partnr, data = df_nasa)
+```
+
+
+##### Plot interaction
+```{r}
+df_nasa %>% 
+  group_by(trial,group) %>% 
+  summarise(nasa_groups = mean(NASATLX),
+            nasa_sem = (sd(NASATLX)/sqrt(length(NASATLX)))) -> nasa2
+
+nasa2 %>% 
+  ggplot() +
+  theme_classic() + 
+  aes(x = trial, y = nasa_groups, colour = group) +
+  geom_line(aes(group = group)) +
+  scale_color_manual(values =  c('darkgoldenrod2', 'darkcyan', 'darkred')) +
+  geom_point() +
+  geom_linerange(aes(x = trial, ymin = nasa_groups - nasa_sem, ymax = nasa_groups + nasa_sem), size = .3) +
+  labs(title = "NASA-TLX scores per group and trial", y = "NASA-TLX scores") +
+  theme(legend.justification=c(1,0), legend.position=c(1,0.1), legend.box.background = element_rect(),
+  legend.box.margin = margin(6, 6, 6, 6)) +
+  scale_y_continuous(limits = c(0,5))
+  
+ggsave("plots_hypothesis_tests/nasa-tlx_interaction_plot.png")
+```
+
+##### Plot main effect of trial
+```{r}
+df_nasa %>% 
+  group_by(trial) %>% 
+  summarise(nasa_groups = mean(NASATLX),
+            nasa_sem = (sd(NASATLX)/sqrt(length(NASATLX)))) -> nasa3
+
+
+nasa3 %>% 
+  ggplot() +
+  theme_classic() +
+  aes(x = trial, y = nasa_groups) +
+  geom_line(group = 1) +
+  geom_smooth() +
+  geom_point() +
+  geom_linerange(aes(x = trial, ymin = nasa_groups - nasa_sem, ymax = nasa_groups + nasa_sem), size = .3) +
+  labs(title = "NASA-TLX scores per trial", y = "NASA-TLX scores") +
+  scale_y_continuous(limits = c(0,7))
+
+ggsave("plots_hypothesis_tests/nasa-tlx_main_effect.png")
+```
+
+##### Boxplots
+```{r}
+ggplot(aes(y = NASATLX, x = group, fill = trial), data = df_nasa) + geom_boxplot()
+```
+
+##### Compute post-hoc tests
+
+###### Test effect of trial
+
+Computing pairwise comparisons between all groups using Wilcoxon signed-rank test shows that NASA-TLX scores after trial 0 (before the interruptions) are significantly lower than after trial 2 and 3 (after the second/third interruption). Also, NASA-TLX scores after trial 1 are significantly lower than after trial 2. 
+
+```{r}
+pwc_trial <- df_nasa %>%
+  wilcox_test(NASATLX ~ trial, 
+              comparisons = list(c(0, 1), c(0,2), c(0,3), c(1,2), c(2,3)), 
+              paired = TRUE, 
+              p.adjust.method = "holm")
+
+pwc_trial
+```
+
+Pairwise comparisons between trials just for the control group between measurepoints one and two, one and three, two and three and three and four indicate that there is a significant difference between the first point of measurement and the third one (p = .034). 
+```{r}
+df_control <- df_nasa[df_nasa$group == "control group",]
+pwc_trial_control <- df_control %>%
+  wilcox_test(NASATLX ~ trial, 
+              comparisons = list(c(0, 1), c(0,2), c(1,2), c(2,3)), 
+              paired = TRUE, 
+              p.adjust.method = "holm")
+pwc_trial_control
+```
+
+Pairwise comparisons between trials just for the context-free experimental group do not reach statistical significance. 
+```{r}
+df_exp1 <- df_nasa[df_nasa$group == "context-free experimental group",]
+pwc_trial_exp1 <- df_exp1 %>%
+  wilcox_test(NASATLX ~ trial, 
+              comparisons = list(c(0, 1), c(0,2), c(1,2), c(1,3), c(0,3)), 
+              paired = TRUE, 
+              p.adjust.method = "holm")
+pwc_trial_exp1
+```
+
+Pairwise comparisons between trials just for the context-sensitive experimental group do not reach statistical significance. 
+```{r}
+df_exp2 <- df_nasa[df_nasa$group == "context-sensitive experimental group",]
+pwc_trial_exp2 <- df_exp2 %>%
+  wilcox_test(NASATLX ~ trial, 
+              comparisons = list(c(0,1), c(0,2), c(1,2)), 
+              paired = TRUE, p.adjust.method = "holm")
+pwc_trial_exp2
+```
+
+###### Comparing control group and experimental group context-sensitive at trial 0
+Control group has significantly lower values for workload before the interruptions (p = .026).
+```{r}
+control_vs_exp_context_trial0 <- wilcox.test( df_wide[(df_wide$group == "context-sensitive experimental group"),]$NASATLX_1, df_wide[(df_wide$group == "control group"),]$NASATLX_1, alternative = 'g')
+
+control_vs_exp_context_trial0
+```
+
+###### Comparing control group and experimental group context-sensitive at trial 4 (n.s.) 
+```{r}
+ wilcox.test( df_wide[(df_wide$group == "context-sensitive experimental group"),]$NASATLX_4, df_wide[(df_wide$group == "control group"),]$NASATLX_4, alternative = 'g')
+```
+
+##### Comparing only the mental workload after interruptions (signifiant effect of trial, no significant effect of interaction or group)
+
+Create df with data only after the first interruption. 
+```{r}
+df_nasa123 <- df_nasa[!(df_nasa$trial == 0),]
+df_nasa123$trial <- factor(df_nasa123$trial)
+
+```
+
+Compute robust ANOVA
+```{r}
+bwtrim(formula = NASATLX ~ group * trial, id = partnr, data = df_nasa123)
+```
+
+Plot the interaction for NASA-TLX values after the first interruption
+```{r}
+interaction.plot(df_nasa123$`trial`, df_nasa123$group, df_nasa123$NASATLX, xlab = 'trial', ylab = 'NASA-TLX Mittelwert', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+```
+
+##### Comparing NASA-TLX group differences without the context-free experimental group (to check for effects of the unbalanced data)
+As when the whole data set is used, the analysis yields a significant main effect of trial (p= .031) but no significant effects of trial or group. 
+
+Compute df without context-free experimental group
+```{r}
+df_exp_control <- df_nasa[!(df_nasa$group=="context-free experimental group"),]
+
+df_exp_control$trial <- factor(df_exp_control$trial, levels=c(0,1,2,3), labels=c('0','1','2','3'))
+df_exp_control$group <- factor(df_exp_control$group)
+df_exp_control$partnr <- factor(df_exp_control$partnr)
+```
+
+Compute robust ANOVA
+```{r}
+bwtrim(formula = NASATLX ~ group * trial, id = partnr, data = df_exp_control)
+```
+
+Compute pairwise comparisons
+```{r}
+pwc_trial <- df_exp_control %>%
+  wilcox_test(NASATLX ~ trial, paired = TRUE, p.adjust.method = "bonferroni")
+pwc_trial
+```
+
+#### Subscales
+Subscales for effort, mental demand and performance did not reach statistical significance (see file "nasa_subscales_anaylsis.Rmd" for a more detailed analysis).
+
+##### Frustration: significant main effect of trial (F(3, 156) =   8.34, p < .001, np2 = .14)
+
+QQplots and levenetest indicate normal distribution and variance homogenity.
+```{r}
+nasa_frustration_anova <- ezANOVA(
+  data = df_nasa, 
+  dv = nasa_tlx_frustration, 
+  wid = partnr, 
+  within = trial, 
+  between = group, 
+  detailed = TRUE, 
+  return_aov = TRUE, 
+  type = 3
+)
+
+anova_out(nasa_frustration_anova)
+```
+
+Plot interaction
+```{r}
+interaction.plot(df_nasa$`trial`, df_nasa$group, df_nasa$nasa_tlx_frustration, xlab = 'trial', ylab = 'NASA-TLX frustration subscales', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+```
+
+##### Physical demand: significant main effect of trial
+QQplot of the residuals indicates that the assumption of normal distribution is not met --> compute robust ANOVA.
+```{r}
+bwtrim(formula = nasa_tlx_physical_demand ~ group * trial, id = partnr, data = df_nasa)
+```
+
+Plot interaction
+```{r}
+interaction.plot(df_nasa$`trial`, df_nasa$group, df_nasa$nasa_tlx_physical_demand, xlab = 'trial', ylab = 'NASA-TLX physical demand subscale', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+```
+
+##### Time: significant main effect of trial
+The Levene test for homogenity of variances indicates that variance homogenity is not given, so we compute robust ANOVA.
+```{r}
+bwtrim(formula = nasa_tlx_time ~ group * trial, id = partnr, data = df_nasa)
+```
+
+Plot interaction
+```{r}
+interaction.plot(df_nasa$`trial`, df_nasa$group, df_nasa$nasa_tlx_time, xlab = 'trial', ylab = 'NASA-TLX time subscale', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+```
+
+### Resumption lags
+##### For a more detailed analysis of resumption, list input and purposeful action lags, including all transformations, see the file  "res_lags.Rmd".
+
+
+resumption lag = time from the moment that the order list is opened in the browser (after the interruption) until the moment when test participants press a key or do a mouse click (in ms). We analyse absolute time and time relative to the average inter-click intervals, measured during the last two minutes of the primary task (minus / divided by the average time). 
+  
+  Analysing distribution characteristics for raw, log-transformed and inverted resumption lags indicate that resumption speed (1/resumption lags) has the best distribution characteristics and shall therefore be used for the subsequent analysis. The analysis revealed significant main effects of group and trial.
+  
+  
+#### Test normal distribution assumptions for 1/resumption lags (speed)
+
+transform the data
+```{r}
+df_long$res_speed <- 1/df_long$resumption_lags
+```
+
+Compute split-plots anova for log-transformed resumption lags
+```{r}
+res_speed_anova <- aov(res_speed ~ trial*group + Error(partnr/(trial)), data=df_long)
+summary(res_speed_anova)
+```
+
+```{r}
+aov_res_speed <- ezANOVA(
+  data = df_long
+  , dv = res_speed
+  , wid = partnr
+  , within = trial
+  , between = group
+  , detailed = TRUE
+  , return_aov = TRUE
+  , type = 3
+)
+
+anova_out(aov_res_speed)
+```
+
+
+Check normal distribution assumption by plotting residuals
+```{r}
+aov_res_speed.pr <- proj(res_speed_anova)
+reslagspeed_res <- aov_res_speed.pr[[3]][, "Residuals"]
+
+qqnorm(reslagspeed_res); qqline(reslagspeed_res)
+```
+
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(x = reslagspeed_res )
+```
+
+Run Levene test for homogenity of variance across groups
+```{r}
+leveneTest(df_long$res_speed~df_long$group)
+```
+QQplot of the residuals indicates that the assumption of normal distribution and variance homogenity are met.  
+Resumption speed meets the assumptions for ANOVA best. 
+
+
+
+
+
+```{r}
+# Boxplot for resumption speed per group
+
+ggplot(df_long,aes(x = group, y=res_speed) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "resumption speed",
+       title="resumption speed by group")
+
+# interaction plot
+interaction.plot(df_long$trial, df_long$group, df_long$res_speed, xlab = 'Task NR', ylab = 'resumption speed')
+```
+
+```{r}
+df_long %>% 
+  group_by(trial,group) %>% 
+  summarise(res_speed_groups = mean(res_speed),
+            res_speed_sem = (sd(res_speed)/sqrt(length(res_speed)))) -> df_rs
+
+df_rs %>% 
+  ggplot() +
+  theme_classic() +
+  aes(x = trial, y = res_speed_groups, colour = group) +
+  geom_line(aes(group = group)) +
+  scale_color_manual(values =  c('darkgoldenrod2', 'darkcyan', 'darkred')) +
+  geom_point() +
+  geom_linerange(aes(x = trial, ymin = res_speed_groups - res_speed_sem, ymax = res_speed_groups + res_speed_sem), size = .3) +
+  theme(legend.box.background = element_rect(),
+  legend.box.margin = margin(4, 4, 4, 4)) +
+  labs(title = "Resumption speed per group and trial", y = "Resumption speed in 1/ms")
+  scale_y_continuous(limits = c(0,0.0003))
+  
+ggsave("plots_hypothesis_tests/res_speed_per_groups.png")
+```
+
+
+#### Post-hoc analysis
+
+Pairwise t-tests for trials
+```{r}
+pwc_trial <- df_long%>%
+  pairwise_t_test(
+    res_speed ~ trial, paired = TRUE,
+    p.adjust.method = "holm"
+    )
+pwc_trial
+
+```
+Pairwise t-tests indicte significant differences between trials one and two / three.   
+  
+#### Compute contrasts between control group and both experimental groups / only the context-sensitive experimental group after setting up a mixed linear model
+
+The contrast between control group and both experimental groups reaches statistical significance. The other contrast does not.
+```{r}
+lm.res_lags <- lme(res_speed ~ group*trial, data = df_long, random = ~1|partnr, correlation = corCompSymm(form = ~1|partnr))
+
+leastsquare = lsmeans(lm.res_lags, "group")
+
+Contrasts = list(ControlvsExp = c(-1, -1, 2), 
+                 ControlvsExpContext = c(0, -1, 1))
+
+contrast(leastsquare, Contrasts, adjust="sidak")
+```
+
+
+
+### List input lags
+Compare how long it takes test participants to make the next order list entry in the order list after an interruption. Untransformed list input lags meet the requirements for ANOVA best and shall therefore be used for analysis. There is a significant main effect of trial but no further significant effects.
+
+
+##### Replace missing values with median
+```{r}
+aggregate(df_long$list_input_lags, by= list(df_long$group),FUN=function(x) {sum(is.na(x))} )
+```
+  
+  Missing values per test participant
+```{r}
+aggregate(df_long$list_input_lags, by= list(df_long$partnr),FUN=function(x) {sum(is.na(x))} )
+```
+  
+  
+
+Substitute missing values with median
+```{r}
+df_list_md <- df_long  %>% select(partnr, trial, group,list_input_lags)
+
+list_exp <- df_list_md$list_input_lags[which(df_list_md$group == "context-sensitive experimental group")]
+list_control <- df_list_md$list_input_lags[which(df_list_md$group == "control group")]
+list_exp_2 <- df_list_md$list_input_lags[which(df_list_md$group == "context-free experimental group")]
+md_exp <- median(list_exp, na.rm = TRUE)
+md_control <- median(list_control, na.rm = TRUE)
+md_exp_2 <- median(list_exp_2, na.rm = TRUE)
+
+# replace NA's with median
+df_list_md$list_input_lags[is.na(df_list_md$list_input_lags) & df_list_md$group == "context-sensitive experimental group"] <- md_exp
+df_list_md$list_input_lags[is.na(df_list_md$list_input_lags) & df_list_md$group == "control group"] <- md_control
+df_list_md$list_input_lags[is.na(df_list_md$list_input_lags) & df_list_md$group == "context-free experimental group"] <- md_exp_2
+
+## check NA's
+## missing values per group
+aggregate(df_list_md$list_input_lags, by= list(df_list_md$group),FUN=function(x) {sum(is.na(x))} )
+```
+  
+  
+  
+
+#### Are there differences in how fast test participants make the the first order list entry after an interruption between groups and trials ?
+
+Compute split-plots anova for list input lags
+```{r}
+inputlag_anova <- ezANOVA(
+data = df_list_md
+, dv = list_input_lags
+, wid = partnr
+, within = trial
+, between = group
+, detailed = TRUE
+, type = 3
+, return_aov = TRUE
+)
+
+anova_out(inputlag_anova)
+```
+
+Check normal distribution assumption by plotting residuals
+```{r}
+aov_inputlag.pr <- proj(inputlag_anova$aov) 
+inputlag_res <- aov_inputlag.pr[[3]][, "Residuals"]
+
+qqnorm(inputlag_res); qqline(inputlag_res)
+```
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(x = inputlag_res )
+```
+
+Run Levene test for homogeneity of variance across groups
+```{r}
+leveneTest(df_list_md$list_input_lags~df_list_md$group)
+```
+
+QQplot of the residuals and Shapiro-Wilk test indicates that the assumptions of normal distribution/variance homogenity are met 
+
+Boxplot and interaction plot for list input lag by group
+```{r}
+ggplot(df_list_md,aes(x = group, y=list_input_lags) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "list input lag",
+       title="List input lag by group")
+
+```
+
+```{r}
+df_list_md %>% 
+  group_by(trial,group) %>% 
+  summarise(lil_groups = mean(list_input_lags),
+            lil_sem = (sd(list_input_lags)/sqrt(length(list_input_lags)))) -> df_lil
+
+plot_lil = df_lil %>% 
+  ggplot() +
+  aes(x = trial, y = lil_groups, colour = group) +
+  theme_classic() +
+  geom_line(aes(group = group)) +
+  scale_color_manual(values =  c('darkgoldenrod2', 'darkcyan', 'darkred')) +
+  geom_point() +
+  geom_linerange(aes(x = trial, ymin = lil_groups - lil_sem, ymax = lil_groups + lil_sem), size = .3) +
+  theme(legend.justification=c(1,0), legend.position=c(1,0.6), legend.box.background = element_rect(),
+  legend.box.margin = margin(4, 4, 4, 4)) +
+  labs(title = "List input lags per group and trial", y = "list input lags in ms")
+
+plot_lil
+
+ggsave("plots_hypothesis_tests/list_input_lags_per_groups.png", height = 5, width = 7)
+``` 
+
+Post-hoc tests
+
+```{r}
+pwc_trial <- df_list_md %>%
+  pairwise_t_test(
+    list_input_lags ~ trial, paired = TRUE,
+    p.adjust.method = "holm"
+    )
+
+pwc_trial
+```
+
+
+
+### Purposeful action lags
+Analyse differences between experimental groups in the time it takes them until the next purposeful action. There are no advantages of log-transforming or inverting the purposeful action lags in terms of the normal distribution chracteristics of the data. Therefore, the analysis of the untransformed values shall be reported. 
+
+Create dataframe without control group
+```{r}
+df_exp <- df_long[!(df_long$group=="control group"),]
+```
+
+Convert group and trial to factors
+```{r}
+df_exp$group <- factor(df_exp$group)
+df_exp$trial <- factor(df_exp$trial)
+```
+
+Substitute missing values with group median
+```{r} 
+df_exp <- df_exp  %>% select(partnr, trial, group, purposeful_action_lags)
+
+list_exp1 <- df_exp$purposeful_action_lags[which(df_exp$group == "context-sensitive experimental group")]
+list_exp2 <- df_exp$purposeful_action_lags[which(df_exp$group == "context-free experimental group")]
+md_exp1 <- median(list_exp1, na.rm = TRUE)
+md_exp2 <- median(list_exp2, na.rm = TRUE)
+
+# replace NA's with median
+df_exp$purposeful_action_lags[is.na(df_exp$purposeful_action_lags) & df_exp$group == "context-sensitive experimental group"] <- md_exp1
+df_exp$purposeful_action_lags[is.na(df_exp$purposeful_action_lags) & df_exp$group == "context-free experimental group"] <- md_exp2
+## check NA's
+## missing values per group
+aggregate(df_exp$purposeful_action_lags, by= list(df_exp$group),FUN=function(x) {sum(is.na(x))} )
+```
+
+##### Plot the interaction
+```{r}
+df_exp %>% 
+  group_by(trial,group) %>% 
+  summarise(ppa_groups = mean(purposeful_action_lags),
+            ppa_sem = (sd(purposeful_action_lags)/sqrt(length(purposeful_action_lags)))) -> df_ppa
+
+plot_ppa = df_ppa %>% 
+  ggplot() +
+  theme_classic() +
+  aes(x = trial, y = ppa_groups, colour = group) +
+  geom_line(aes(group = group)) +
+  scale_color_manual(values =  c('darkgoldenrod2', 'darkcyan', 'darkred')) +
+  geom_point() +
+  geom_linerange(aes(x = trial, ymin = ppa_groups - ppa_sem, ymax = ppa_groups + ppa_sem), size = .3) +
+  theme(legend.justification=c(1,0), legend.position = c(0.9, 0.7), legend.box.background = element_rect(),
+  legend.box.margin = margin(4,4,4,4))+
+  labs(title = "Purposeful action lags", y = "purposeful action lags in ms")
+
+plot_ppa
+
+ggsave("plots_hypothesis_tests/ppa_per_groups.png", height = 5, width=7)
+```
+
+
+##### Boxplot for purposeful action lag by group
+```{r}
+ggplot(df_exp,aes(x = group, y=purposeful_action_lags) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "purposeful action lag",
+       title="Time until the next purposeful action after the interruption (in ms)")
+```
+
+##### Compute ezANOVA to extract residuals
+```{r}
+purposeful_action_lag_anova = ezANOVA(
+data = df_exp
+, dv = purposeful_action_lags
+, wid = partnr
+, within = trial
+, between = group
+, detailed = TRUE
+, type = 3
+, return_aov = TRUE
+)
+
+anova_out(purposeful_action_lag_anova)
+```
+
+Check normal distribution assumption by plotting residuals
+```{r}
+aov_ppa.pr <- proj(purposeful_action_lag_anova$aov) 
+ppa_res <- aov_ppa.pr[[3]][, "Residuals"]
+
+qqnorm(ppa_res); qqline(ppa_res)
+```
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(df_exp$purposeful_action_lags)
+```
+
+Run Levene test for homogenity of variance across groups
+```{r}
+leveneTest(df_exp$purposeful_action_lags~df_exp$group)
+```
+
+QQplot of the residuals and the Shapiro-Wilk test indicate that the assumptions of normal distribution is not met. 
+
+#### Compute robust ANOVA
+```{r}
+bwtrim(formula = purposeful_action_lags ~ group * trial, id = partnr, data = df_exp)
+```
+
+
+
+
+
+
+
+

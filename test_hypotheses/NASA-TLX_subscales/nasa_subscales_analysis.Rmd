@@ -1,0 +1,498 @@
+---
+title: "Analysis NASA-TLX subscales"
+output: html_notebook
+---
+
+## Load packages and data
+```{r}
+library(WRS2)
+library(rcompanion)
+library(feather)
+library(ggplot2)  
+library(plyr)
+library(ez)
+library(schoRsch)
+library(MASS)
+library(car)
+library(rstatix)
+library(tidyverse)
+
+```
+
+```{r}
+# df_nasa has four rows per particpant, one for each nasa-tlx test
+df_nasa <- read_feather(path = 'C:/Users/janin/Desktop/Studium/Masterarbeit/09_results_files/results_test_18-03-2020_messwdh_nasa.file')
+
+```
+
+## Prepare the data
+
+Assign participants to the experimental groups:  
+
+* version 1 and 2 --> control group  
+
+* version 3 und 4 --> experimental group context free  
+
+* version 5 und 6--> experimental group context sensitive
+```{r}
+df_nasa$group <- ifelse((df_nasa$version == 5 | df_nasa$version == 6), 'context-sensitive experimental group', ifelse((df_nasa$version == 1 | df_nasa$version == 2), 'control group', 'context-free experimental group'))
+```
+
+
+Convert trial, group and subject number to factors
+```{r}
+df_nasa$trial <- factor(df_nasa$trial, levels=c(0,1,2,3), labels=c('0','1','2','3'))
+df_nasa$group <- factor(df_nasa$group)
+df_nasa$partnr <- factor(df_nasa$partnr)
+```
+
+### Descriptive statistics
+```{r}
+df_nasa %>% 
+  group_by(trial, group) %>%
+  summarise(mean(NASATLX), sd(NASATLX))
+```
+```{r}
+df_nasa %>% 
+  group_by(trial, group) %>%
+  summarise(mean(nasa_tlx_effort), sd(nasa_tlx_effort))
+```
+
+```{r}
+df_nasa %>% 
+  group_by(trial, group) %>%
+  summarise(mean(nasa_tlx_frustration), sd(nasa_tlx_frustration))
+```
+```{r}
+df_nasa %>% 
+  group_by(trial, group) %>%
+  summarise(mean(nasa_tlx_mental_demand), sd(nasa_tlx_mental_demand))
+```
+```{r}
+df_nasa %>% 
+  group_by(trial, group) %>%
+  summarise(mean(nasa_tlx_performance), sd(nasa_tlx_performance))
+```
+```{r}
+df_nasa %>% 
+  group_by(trial, group) %>%
+  summarise(mean(nasa_tlx_physical_demand), sd(nasa_tlx_physical_demand))
+```
+```{r}
+df_nasa %>% 
+  group_by(trial, group) %>%
+  summarise(mean(nasa_tlx_time), sd(nasa_tlx_time))
+```
+## Analyse the subscales 
+
+### Effort subscale
+
+Robust ANOVA yields no significant results. 
+```{r}
+nasa_effort_anova <- ezANOVA(
+  data=df_nasa
+  , dv = nasa_tlx_effort
+  , wid = partnr
+  , within = trial
+  , between = group 
+  , detailed = TRUE
+  , return_aov = TRUE
+  , type = 3)
+
+anova_out(nasa_effort_anova)
+```
+
+
+Plot the interaction
+```{r}
+interaction.plot(df_nasa$`trial`, df_nasa$group, df_nasa$nasa_tlx_effort, xlab = 'trial', ylab = 'NASA-TLX Mittelwert', trace.label = 'groupn', cex=1.3, pch=1, pt.cex = 1)
+```
+
+
+Check normal distribution assumption by plotting residuals and run Shapiro-Wilk test.
+```{r}
+nasa_effort.pr <- proj(nasa_effort_anova$aov) 
+effort_res <- nasa_effort.pr[[3]][, "Residuals"]
+
+qqnorm(effort_res); qqline(effort_res)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = effort_res )
+```
+
+
+
+Check variance homogenity assumption through Levene test for homogenity of variance across groups. 
+```{r}
+leveneTest(df_nasa$nasa_tlx_effort~df_nasa$group)
+```
+
+QQplot of the residuals indicates that the assumption of normal distribution is not met, so we compute robust ANOVA (n.s.). 
+```{r}
+bwtrim(formula = nasa_tlx_effort ~ group * trial, id = partnr, data = df_nasa)
+```
+
+
+
+### Frustration subscale
+
+Robust ANOVA shows a significant effect of trial. Post-hoc comparisons between trial 0/1 versus 2/3 are all significant. This indicates that frustration is higher in the last two trials in comparison to the first two trials. 
+```{r}
+nasa_frustration_anova <- ezANOVA(
+  data=df_nasa
+  , dv = nasa_tlx_frustration
+  , wid = partnr
+  , within = trial
+  , between = group 
+  , detailed = TRUE
+  , return_aov = TRUE
+  , type = 3)
+
+anova_out(nasa_frustration_anova)
+```
+
+
+Plot the interaction
+```{r}
+interaction.plot(df_nasa$`trial`, df_nasa$group, df_nasa$nasa_tlx_frustration, xlab = 'trial', ylab = 'NASA-TLX Mittelwert', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+```
+
+
+Check normal distribution assumption by plotting residuals and run Shapiro-Wilk test.
+```{r}
+nasa_frustration.pr <- proj(nasa_frustration_anova$aov) 
+frustration_res <- nasa_frustration.pr[[3]][, "Residuals"]
+
+qqnorm(frustration_res); qqline(frustration_res)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = frustration_res )
+```
+QQplot of the residuals indicates that the assumption of normal distribution is met.
+
+
+Check variance homogenity assumption through Levene test for homogenity of variance across groups. 
+```{r}
+leveneTest(df_nasa$nasa_tlx_frustration~df_nasa$group)
+```
+
+Levene test for homogenity of variance indicates that the variance homogenity assumption is not met, so we compute robust ANOVA (n.s.). 
+```{r}
+bwtrim(formula = nasa_tlx_frustration ~ group * trial, id = partnr, data = df_nasa)
+```
+
+
+##### Post-hoc tests
+```{r}
+pwc_trial <- df_nasa %>%
+  wilcox_test(nasa_tlx_frustration ~ trial, 
+              comparisons = list(c(0,2), c(0,3), c(1,2), c(1,3) ), 
+              paired = TRUE, p.adjust.method = "holm")
+pwc_trial
+```
+
+
+
+### Physical demand subscale
+
+Robust ANOVA shows a significant effect of trial. Post-hoc comparisons between trial 0 versus 1/2/3 and 1 versus 3 are all significant. This indicates that physical demand increases over trials.
+```{r}
+nasa_physical_demand_anova <- ezANOVA(
+  data = df_nasa, 
+  dv = nasa_tlx_physical_demand, 
+  wid = partnr, 
+  within = trial, 
+  between = group, 
+  detailed = TRUE, 
+  return_aov = TRUE, 
+  type = 3
+  
+)
+
+anova_out(nasa_physical_demand_anova)
+```
+Interaction plot
+```{r}
+interaction.plot(df_nasa$`trial`, df_nasa$group, df_nasa$nasa_tlx_physical_demand, xlab = 'trial', ylab = 'NASA-TLX Mittelwert', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+```
+
+
+Check normal distribution assumption by plotting residuals and compute Shapiro-Wilk test
+
+```{r}
+nasa_physical_demand.pr <- proj(nasa_physical_demand_anova$aov) 
+physical_demand_res <- nasa_physical_demand.pr[[3]][, "Residuals"]
+qqnorm(physical_demand_res); qqline(physical_demand_res)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = physical_demand_res )
+```
+
+
+
+
+
+Run Levene test for homogeneity of variance across groups
+```{r}
+leveneTest(df_nasa$nasa_tlx_physical_demand~df_nasa$group)
+```
+
+
+QQplot of the residuals indicates that the assumption of normal distribution is not met and significant Levene test indicates that homogeneity of variance is not given, so we compute robust ANOVA. 
+```{r}
+bwtrim(formula = nasa_tlx_physical_demand ~ group * trial, id = partnr, data = df_nasa)
+```
+
+
+Post-hoc tests
+```{r}
+pwc_trial <- df_nasa %>%
+  wilcox_test(nasa_tlx_physical_demand ~ trial, 
+              comparisons = list(c(0,1), c(0,2), c(0,3),  c(1,3) ), 
+              paired = TRUE, p.adjust.method = "holm")
+pwc_trial
+```
+
+
+### Time subscale
+
+Robust ANOVA shows a significant effect of trial. Post-hoc comparisons between trial 0 versus 1/2/3 and 1 versus 2 are all significant. This indicates that time pressure increases over trials.
+```{r}
+nasa_time_anova <- ezANOVA(
+  data = df_nasa, 
+  dv = nasa_tlx_time, 
+  wid = partnr, 
+  within = trial, 
+  between = group, 
+  detailed = TRUE, 
+  return_aov = TRUE, 
+  type = 3
+  
+)
+
+anova_out(nasa_time_anova)
+```
+
+
+Interaction plot
+```{r}
+interaction.plot(df_nasa$`trial`, df_nasa$group, df_nasa$nasa_tlx_time, xlab = 'trial', ylab = 'NASA-TLX Mittelwert', trace.label = 'groupn', cex=1.3, pch=1, pt.cex = 1)
+```
+
+
+Check normal distribution assumption by plotting residuals and running Shapiro-Wilk test
+```{r}
+nasa_time.pr <- proj(nasa_time_anova$aov) 
+time_res <- nasa_time.pr[[3]][, "Residuals"]
+
+qqnorm(time_res); qqline(time_res)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = time_res )
+```
+QQplot of the residuals indicates that the assumption of normal distribution met 
+
+
+
+Run Levene test for homogeneity of variance across groups
+```{r}
+leveneTest(df_nasa$nasa_tlx_time~df_nasa$group)
+```
+
+
+Significant Levene test indicates that variance homogenity is not given, so we compute robust ANOVA.
+
+```{r}
+bwtrim(formula = nasa_tlx_time ~ group * trial, id = partnr, data = df_nasa)
+```
+
+
+Post-hoc tests
+```{r}
+pwc_trial <- df_nasa %>%
+  wilcox_test(nasa_tlx_time ~ trial, 
+              comparisons = list(c(0,1), c(0,2), c(0,3), c(1,2)), 
+              paired = TRUE, p.adjust.method = "holm")
+
+pwc_trial
+```
+
+
+### Mental demand subscale
+
+Robust ANOVA yields no significant effects. 
+```{r}
+nasa_mental_demand_anova <- ezANOVA(
+  data = df_nasa, 
+  dv = nasa_tlx_mental_demand, 
+  wid = partnr, 
+  within = trial, 
+  between = group, 
+  detailed = TRUE, 
+  return_aov = TRUE, 
+  type = 3
+  
+)
+
+anova_out(nasa_mental_demand_anova)
+```
+
+
+Interaction plot
+```{r}
+interaction.plot(df_nasa$`trial`, df_nasa$group, df_nasa$nasa_tlx_mental_demand, xlab = 'trial', ylab = 'NASA-TLX Mittelwert', trace.label = 'groupn', cex=1.3, pch=1, pt.cex = 1)
+```
+
+
+
+Check normal distribution assumption by plotting residuals and running Shapiro-Wilk test
+```{r}
+nasa_mental_demand.pr <- proj(nasa_mental_demand_anova$aov) 
+mental_demand_res <- nasa_mental_demand.pr[[3]][, "Residuals"]
+
+qqnorm(mental_demand_res); qqline(mental_demand_res)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = mental_demand_res )
+```
+
+
+Run Levene test for homogeneity of variance across groups. 
+```{r}
+leveneTest(df_nasa$nasa_tlx_mental_demand~df_nasa$group)
+```
+QQplot of the residuals and the Levene test indicate that the assumptions of normal distribution and variance homogenity are not met, so we compute robust ANOVA. 
+
+
+```{r}
+bwtrim(formula = nasa_tlx_mental_demand ~ group * trial, id = partnr, data = df_nasa)
+```
+
+
+
+### Performance subscale  
+Robust ANOVA yields no significant effects. 
+
+```{r}
+nasa_performance_anova  <- ezANOVA(
+  data = df_nasa, 
+  dv = nasa_tlx_performance, 
+  wid = partnr, 
+  within = trial, 
+  between = group, 
+  detailed = TRUE, 
+  return_aov = TRUE, 
+  type = 3
+  
+)
+
+anova_out(nasa_performance_anova)
+```
+
+
+Interaction plot
+```{r}
+interaction.plot(df_nasa$trial, df_nasa$group, df_nasa$nasa_tlx_performance, xlab = 'trial', ylab = 'NASA-TLX Mittelwert', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+```
+
+
+Check normal distribution assumption by plotting residuals and running Shapiro-Wilk test.
+```{r}
+nasa_performance.pr <- proj(nasa_performance_anova$aov) 
+performance_res <- nasa_performance.pr[[3]][, "Residuals"]
+
+qqnorm(performance_res); qqline(performance_res)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = performance_res )
+```
+
+
+Run Levene test for homogeneity of variance across groups
+```{r}
+leveneTest(df_nasa$nasa_tlx_performance~df_nasa$group)
+```
+
+QQplot of the residuals and the Levene test indicate that the assumptions of normal distribution and variance homogenity are not met, so we compute robust ANOVA.  
+```{r}
+bwtrim(formula = nasa_tlx_performance ~ group * trial, id = partnr, data = df_nasa)
+```
+
+
+boxplot of resumption lags (identify outliers)
+```{r}
+ggplot(df_nasa,aes(x = df_nasa$'group', y=df_nasa$nasa_tlx_performance) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "nasa tlx performance",
+       title="nasa tlx performance by group")
+```
+
+
+
+Plot main effects of trial for subscales
+```{r}
+detach(package:rstatix)
+detach(package:ggpubr)
+detach(package:plyr)
+# frustration 
+df_nasa %>% 
+  group_by(trial) %>% 
+  summarise(nasa_groups = mean(nasa_tlx_frustration),
+            nasa_sem = (sd(nasa_tlx_frustration))/sqrt(length(nasa_tlx_frustration))) -> nasa_f
+plot_f <- nasa_f %>% 
+  ggplot() +
+  theme_classic() +
+  aes(x = trial, y = nasa_groups) +
+  geom_line(group = 1) +
+  geom_point() +
+  geom_linerange(aes(x = trial, ymin = nasa_groups - nasa_sem, ymax = nasa_groups + nasa_sem), size = .3) +
+  labs(title = "Frustration per trial", y = "Frustration scores") +
+  scale_y_continuous(limits = c(0,7))
+
+
+# physical demand
+df_nasa %>% 
+   group_by(trial) %>% 
+  summarise(nasa_groups = mean(nasa_tlx_physical_demand),
+            nasa_sem = (sd(nasa_tlx_physical_demand))/sqrt(length(nasa_tlx_physical_demand))) -> nasa_pd
+
+plot_pd <- nasa_pd %>% 
+  ggplot() +
+  theme_classic() +
+  aes(x = trial, y = nasa_groups) +
+  geom_line(group = 1) +
+  geom_point() +
+  geom_linerange(aes(x = trial, ymin = nasa_groups - nasa_sem, ymax = nasa_groups + nasa_sem), size = .3) +
+  labs(title = "Physical demand per trial", y = "Physical demand scores") +
+  scale_y_continuous(limits = c(0,7))
+
+
+# time
+df_nasa %>% 
+   group_by(trial) %>% 
+  summarise(nasa_groups = mean(nasa_tlx_time),
+            nasa_sem = (sd(nasa_tlx_time))/sqrt(length(nasa_tlx_time))) -> nasa_t
+
+
+
+plot_t <- nasa_t %>% 
+  ggplot() +
+  theme_classic() +
+  aes(x = trial, y = nasa_groups) +
+  geom_line(group = 1) +
+  geom_point() +
+  geom_linerange(aes(x = trial, ymin = nasa_groups - nasa_sem, ymax = nasa_groups + nasa_sem), size = .3) +
+  labs(title = "Time per trial", y = "Time scores") +
+  scale_y_continuous(limits = c(0,7))
+
+```
+
+```{r}
+grid.arrange(plot_f, plot_pd, plot_t, ncol=2)
+```
+
+
+
+

@@ -1,0 +1,316 @@
+---
+title: "System Usability Scale"
+output: html_notebook
+---
+In this notebook, I analyze if the System Usability Scale score differs between groups and if the SUS scores are related to other variables, including NASA-TLX, performance and TA-EG. 
+
+## Load necessary packages
+```{r}
+library(WRS2)
+library(rcompanion)
+library(feather)
+library(ggplot2)  
+library(plyr)
+library(ez)
+library(schoRsch)
+library(MASS)
+library(car)
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+library(here)
+```
+
+
+## Load the data
+
+We are loading the experimental data in wide format. 
+```{r}
+df_wide <- read_feather(path = here('../../data_frames/results_test_18-03-2020.file'))
+```
+
+
+## Prepare the data
+
+### Assign participants to the experimental group 
+* version 1 and 2 --> control group
+* version 3 und 4 --> experimental group context free
+* version 5 und 6--> experimental group context sensitive
+
+```{r}
+df_wide$group <- ifelse((df_wide$version == 5 | df_wide$version == 6), 'context-sensitive experimental group', ifelse((df_wide$version == 1 | df_wide$version == 2), 'controlgroup', 'context-free experimental group'))
+```
+
+```{r}
+# Check if the design is balanced
+table(df_wide$group)
+```
+
+
+```{r}
+# Convert trial, group and subject number to factors in each dataframe
+
+df_wide$group <- factor(df_wide$group)
+df_wide$partnr <- factor(df_wide$partnr)
+
+```
+
+## Data Analysis: System Usability scale
+
+#### Are there differences between the groups?
+Computing Kruskal-Wallis rank sum test yields no significant differences. 
+```{r}
+tapply(df_wide$SUS, df_wide$group, mean)
+tapply(df_wide$SUS, df_wide$group, sd)
+mean(df_wide$SUS)
+sd(df_wide$SUS)
+kruskal.test(df_wide$SUS ~ df_wide$group)
+```
+
+
+#### Are there differences between the versions?
+Computing Kruskal-Wallis rank sum test yields no significant differences. 
+```{r}
+tapply(df_wide$SUS, df_wide$version, mean)
+kruskal.test(df_wide$SUS ~ df_wide$version)
+```
+
+#### How many participants in the experimental groups gave the system a "positive" rating (> 71.4)?
+
+Only four participants rated the prorotpye above 71.4.
+```{r}
+df_exp <- df_wide[!(df_wide$group=="controlgroup"), ]
+
+df_exp$SUS_above_average <- ifelse((df_exp$SUS > 71.4), 1, 0)
+df_exp$SUS_above_average <- as.factor(df_exp$SUS_above_average)
+df_exp %>%
+  count(SUS_above_average)
+```
+
+
+###### boxplots
+```{r}
+ggplot(df_wide,aes(x = group, y=SUS) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "SUS",
+       title="SUS results by group")
+
+```
+
+### Relation with NASA-TLX
+Correlate SUS score and NASA-TLX mean (n.s.). Since the boxplots show some outliers, we compute robust correlation rather than pearson correlation. Trend: the higher the perceived system usability, the lower the perceived mental workload.
+```{r}
+df_wide$NASATLX_mean <-  rowMeans(df_wide[c('NASATLX_1', 'NASATLX_4', 'NASATLX_3', 'NASATLX_4')], na.rm=TRUE)
+pbcor(df_wide$SUS,df_wide$NASATLX_mean)
+```
+
+
+There is a significant negative correlation with NASA-TLX before interruption (p = .019)
+```{r}
+pbcor(df_wide$SUS,df_wide$NASATLX_1)
+plot(df_wide$SUS~df_wide$NASATLX_1) + abline(lm(df_wide$SUS~df_wide$NASATLX_1), col="blue")
+```
+
+
+Correlations with later trials are not significant.
+```{r}
+pbcor(df_wide$SUS,df_wide$NASATLX_2)
+pbcor(df_wide$SUS,df_wide$NASATLX_3)
+pbcor(df_wide$SUS,df_wide$NASATLX_4)
+```
+
+
+Compare the relation between NASA-TLX score before the first interruption and SUS scores between groups.
+```{r}
+df_control <- df_wide[(df_wide$group=="controlgroup"),]
+df_exp_contextfree <- df_wide[(df_wide$group=="context-free experimental group"),]
+df_exp_context <- df_wide[(df_wide$group=="context-sensitive experimental group"),]
+
+plot(df_wide$NASATLX_1~df_wide$SUS) + abline(lm(df_control$NASATLX_1~df_control$SUS), col="blue") + abline(lm(df_exp_contextfree$NASATLX_1~df_exp_contextfree$SUS), col="green") + abline(lm(df_exp_context$NASATLX_1~df_exp_context$SUS), col="red")
+```
+
+
+It turns out that the correlation is mostly pronounced (and only statistically significant) for the context-sensitive experimental group. 
+```{r}
+pbcor(df_control$SUS,df_control$NASATLX_1)
+pbcor(df_exp_contextfree$SUS,df_exp_contextfree$NASATLX_1)
+pbcor(df_exp_context$SUS,df_exp_context$NASATLX_1)
+
+# plotting NASA-TLX scores before the first interruption and SUS scores for the context-sensitive experimental group
+plot(df_exp_context$NASATLX_1~df_exp_context$SUS)  + abline(lm(df_exp_context$NASATLX_1~df_exp_context$SUS), col="green")
+```
+When comparing the overall NASA-TLX score and the SUS scores between groups, a similar trend for the context-sensitive experimental group emerges.
+```{r}
+pbcor(df_control$SUS,df_control$NASATLX_mean)
+pbcor(df_exp_contextfree$SUS,df_exp_contextfree$NASATLX_mean)
+pbcor(df_exp_context$SUS,df_exp_context$NASATLX_mean)
+
+plot(df_exp_context$NASATLX_mean~df_exp_context$SUS)  + abline(lm(df_exp_context$NASATLX_mean~df_exp_context$SUS), col="green")
+```
+#### Exploring the relation between SUS and NASA-TLX values for the context-sensitive group
+For the context-sensitive experimental group, all correlations are significant: the higher the perceived usability, the lower the perceived mental workload. 
+```{r}
+pbcor(df_exp_context$SUS,df_exp_context$NASATLX_2)
+pbcor(df_exp_context$SUS,df_exp_context$NASATLX_3)
+pbcor(df_exp_context$SUS,df_exp_context$NASATLX_4)
+```
+
+#### Performance
+
+There is no significant correlation between performance and SUS score, neither on a global nor on a group level. 
+```{r}
+df_wide <- transform(df_wide, perf = mistakes_after_interruption / entries_after_interruption)
+pbcor(df_wide$perf, df_wide$SUS)
+```
+
+Context-sensitive experimental group
+```{r}
+df_exp_context <- transform(df_exp_context, perf = mistakes_after_interruption / entries_after_interruption)
+pbcor(df_exp_context$perf, df_exp_context$SUS)
+```
+
+
+Context-free experimental group
+```{r}
+df_exp_contextfree <- transform(df_exp_contextfree, perf = mistakes_after_interruption / entries_after_interruption)
+pbcor(df_exp_contextfree$perf, df_exp_contextfree$SUS)
+```
+
+
+Control group
+```{r}
+df_control <- transform(df_control, perf = mistakes_after_interruption / entries_after_interruption)
+pbcor(df_control$perf, df_control$SUS)
+```
+
+
+
+## Resumption speed
+
+There is no significant correlation between resumption speed  and SUS score, neither on a global nor on a group level. 
+```{r}
+# global level
+# compute resumption speed for each trial
+df_wide$res_speed_1 <- 1/df_wide$resumption_lag_1
+df_wide$res_speed_2 <- 1/df_wide$resumption_lag_2
+df_wide$res_speed_3 <- 1/df_wide$resumption_lag_3
+
+# compute correlations between SUS scores and resumption speed for each trial
+pbcor(df_wide$SUS,df_wide$res_speed_1)
+pbcor(df_wide$SUS,df_wide$res_speed_2)
+pbcor(df_wide$SUS,df_wide$res_speed_3)
+```
+
+
+```{r}
+#Context-sensitive experimental group
+# compute resumption speed for each trial
+
+df_exp_context$res_speed_1 <- 1/df_exp_context$resumption_lag_1
+df_exp_context$res_speed_2 <- 1/df_exp_context$resumption_lag_2
+df_exp_context$res_speed_3 <- 1/df_exp_context$resumption_lag_3
+
+# compute correlations between SUS scores and resumption speed for each trial
+
+pbcor(df_exp_context$SUS,df_exp_context$res_speed_1)
+pbcor(df_exp_context$SUS,df_exp_context$res_speed_2)
+pbcor(df_exp_context$SUS,df_exp_context$res_speed_3)
+```
+
+
+```{r}
+#Context-free experimental group
+# compute resumption speed for each trial
+
+df_exp_contextfree$res_speed_1 <- 1/df_exp_contextfree$resumption_lag_1
+df_exp_contextfree$res_speed_2 <- 1/df_exp_contextfree$resumption_lag_2
+df_exp_contextfree$res_speed_3 <- 1/df_exp_contextfree$resumption_lag_3
+
+# compute correlations between SUS scores and resumption speed for each trial
+pbcor(df_exp_contextfree$SUS,df_exp_contextfree$res_speed_1)
+pbcor(df_exp_contextfree$SUS,df_exp_contextfree$res_speed_2)
+pbcor(df_exp_contextfree$SUS,df_exp_contextfree$res_speed_3)
+```
+
+
+```{r}
+#Control group
+# compute resumption speed for each trial
+
+df_control$res_speed_1 <- 1/df_control$resumption_lag_1
+df_control$res_speed_2 <- 1/df_control$resumption_lag_2
+df_control$res_speed_3 <- 1/df_control$resumption_lag_3
+
+# compute correlations between SUS scores and resumption speed for each trial
+pbcor(df_control$SUS,df_control$res_speed_1)
+pbcor(df_control$SUS,df_control$res_speed_2)
+pbcor(df_control$SUS,df_control$res_speed_3)
+```
+## List input lags
+
+There is no significant correlation between list input lags and SUS score, neither on a global nor on a group level.
+
+```{r}
+# global level
+# compute correlations between SUS scores and list input lags for each trial
+
+pbcor(df_wide$SUS,df_wide$list_input_lag_1)
+pbcor(df_wide$SUS,df_wide$list_input_lag_2)
+pbcor(df_wide$SUS,df_wide$list_input_lag_3)
+```
+
+
+```{r}
+# Control group
+# compute correlations between SUS scores and list input lags for each trial
+
+pbcor(df_control$SUS,df_control$list_input_lag_1)
+pbcor(df_control$SUS,df_control$list_input_lag_2)
+pbcor(df_control$SUS,df_control$list_input_lag_3)
+```
+
+```{r}
+# context-sensitive experimental group
+# compute correlations between SUS scores and list input lags for each trial
+
+pbcor(df_exp_context$SUS,df_exp_context$list_input_lag_1)
+pbcor(df_exp_context$SUS,df_exp_context$list_input_lag_2)
+pbcor(df_exp_context$SUS,df_exp_context$list_input_lag_3)
+```
+
+```{r}
+#context-free experimental group
+# compute correlations between SUS scores and list input lags for each trial
+
+pbcor(df_exp_contextfree$SUS,df_exp_contextfree$list_input_lag_1)
+pbcor(df_exp_contextfree$SUS,df_exp_contextfree$list_input_lag_2)
+pbcor(df_exp_contextfree$SUS,df_exp_contextfree$list_input_lag_3)
+```
+
+
+## purposeful action lags
+
+There is no significant correlation between purposeful action lags and SUS score. 
+```{r}
+# df without control group
+df_exp <- df_wide[!(df_wide$group=="controlgroup"),]
+
+# convert group and trial to factors
+df_exp$group <- factor(df_exp$group)
+
+# log-transform purposeful action lags to achieve better distribution characteristics
+df_exp$ppa_log_1 <- log(df_exp$purposeful_action_lag_1)
+df_exp$ppa_log_2 <- log(df_exp$purposeful_action_lag_2)
+df_exp$ppa_log_3 <- log(df_exp$`purposeful_action_lag.3`)
+
+
+## compute correlations
+cor.test(df_exp$ppa_log_1, df_exp$SUS, use='complete.obs')
+cor.test(df_exp$ppa_log_2, df_exp$SUS, use='complete.obs')
+cor.test(df_exp$ppa_log_3, df_exp$SUS, use='complete.obs')
+
+
+```
+

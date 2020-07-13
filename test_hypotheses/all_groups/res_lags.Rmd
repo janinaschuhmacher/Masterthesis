@@ -1,0 +1,870 @@
+---
+title: "Resumption Lags"
+output: html_notebook
+---
+
+
+## Include necessary packages and load data
+
+```{r}
+library(WRS2)
+library(rcompanion)
+library(feather)
+library(ggplot2)  
+library(plyr)
+library(ez)
+library(schoRsch)
+library(MASS)
+library(car)
+library(ggpubr)
+library(rstatix)
+library(DescTools)
+library(tidyverse)
+library(lsmeans)
+library(here)
+```
+
+
+## Load the data
+
+We are loading the experimetal data in long format. 
+
+df_long has one row per trial per participant (so three rows per participant for interruption 1, 2, 3). 
+```{r}
+df_long <- read_feather(path = here('../../data_frames/results_test_18-03-2020_messwdh.file'))
+```
+
+
+
+## Prepare the data
+
+### Assign participants to the experimental group 
+* version 1 and 2 --> control group
+* version 3 und 4 --> experimental group context free
+* version 5 und 6--> experimental group context sensitive
+
+```{r}
+df_long$group <- ifelse((df_long$version == 5 | df_long$version == 6), 'context-sensitive experimental group', ifelse((df_long$version == 1 | df_long$version == 2), 'control group', 'context-free experimental group'))
+
+```
+
+
+### Convert trial, group and subject number to factors in each dataframe
+```{r}
+df_long$trial <- factor(df_long$trial, levels=c(1,2,3), labels=c('1','2','3'))
+df_long$group <- factor(df_long$group)
+df_long$partnr <- factor(df_long$partnr)
+```
+
+
+### Resumption lags
+resumption lag = time from the moment that the order list is opened in the browser (after the interruption) until the moment when test participants press a key or do a mouse click (in ms). We analyse absolute time and time relative to the average inter-click intervals, measured during the last two minutes of the primary task (minus / divided by the average time).  
+  
+Analysing distribution characteristics for raw, log-transformed and inverted resumption lags indicate that resumption speed (1/resumption lags) has the best distribution characteristics and shall therefore be used for the subsequent analysis. The analysis revealed significant main effects of group and trial.
+
+##### Boxplot of resumption lags (identify outliers)
+```{r}
+
+ggplot(df_long,aes(x = group, y=resumption_lags) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "resumption lag",
+       title="resumption lag by group")
+
+```
+
+compute split-plots anova for resumption lags
+```{r}
+sp_reslag_anova <- aov(resumption_lags ~ trial*group + Error(partnr/(trial)), data=df_long)
+summary(sp_reslag_anova)
+
+
+res_lag_anova = ezANOVA(
+data = df_long
+, dv = resumption_lags
+, wid = partnr
+, within = trial
+, between = group
+, detailed = TRUE
+, type = 3
+)
+
+anova_out(res_lag_anova)
+```
+
+##### Test requirements for ANOVA
+
+check normal distribution assumption by plotting residuals
+```{r}
+aov_reslag.pr <- proj(sp_reslag_anova) 
+reslag_res <- aov_reslag.pr[[3]][, "Residuals"]
+
+qqnorm(reslag_res); qqline(reslag_res)
+```
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(x = reslag_res )
+```
+
+
+
+Run Levene test for homogeneity of variance across groups
+```{r}
+leveneTest(df_long$resumption_lags~df_long$group)
+```
+The tests indicate that the requirements for ANOVA are not met. Therefore, we compute robust ANOVA.
+Robust ANOVA for resumption lags yields significant effects of trial and group. 
+```{r}
+bwtrim(resumption_lags ~ group*trial, id = partnr, data = df_long)
+```
+
+Test contrasts
+```{r}
+sppbi(formula = resumption_lags~ group * trial, id = partnr, data = df_nasa)
+```
+
+Plot interaction
+```{r}
+interaction.plot(df_long$`trial`, df_long$group, df_long$resumption_lags, xlab = 'trial', ylab = 'resumption lags', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+```
+
+
+##### Test normal distribution assumptions for log-transformed data
+
+log-transform the data
+```{r}
+df_long$reslags_log <- log(df_long$resumption_lags)
+```
+
+Compute split-plots anova for log-transformed resumption lags
+```{r}
+reslags_log_anova <- aov(reslags_log ~ trial*group + Error(partnr/(trial)), data=df_long)
+summary(reslags_log_anova)
+```
+
+Check normal distribution assumption by plotting residuals
+```{r}
+aov_reslags_log.pr <- proj(reslags_log_anova) 
+reslaglog_res <- aov_reslags_log.pr[[3]][, "Residuals"]
+
+qqnorm(reslaglog_res); qqline(reslaglog_res)
+```
+The QQplots look more normally distributed but there is one extreme outlier.
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(x = reslaglog_res )
+```
+
+Run Levene test for homogeneity of variance across groups
+```{r}
+leveneTest(df_long$reslags_log~df_long$group)
+```
+The tests indicate that the requirements for ANOVA are not met. 
+
+##### Test normal distribution assumptions for 1/resumption lags (speed)
+A significant main effect of group and trial emerges.
+
+```{r}
+#transform the data
+df_long$res_speed <- 1/df_long$resumption_lags
+```
+
+Compute split-plots anova for log-transformed resumption lags
+```{r}
+res_speed_anova <- aov(res_speed ~ trial*group + Error(partnr/(trial)), data=df_long)
+summary(res_speed_anova)
+```
+
+```{r}
+aov_res_speed <- ezANOVA(
+  data = df_long
+  , dv = res_speed
+  , wid = partnr
+  , within = trial
+  , between = group
+  , detailed = TRUE
+  , return_aov = TRUE
+  , type = 3
+)
+
+anova_out(aov_res_speed)
+```
+
+
+Check normal distribution assumption by plotting residuals
+```{r}
+aov_res_speed.pr <- proj(res_speed_anova)
+reslagspeed_res <- aov_res_speed.pr[[3]][, "Residuals"]
+
+qqnorm(reslagspeed_res); qqline(reslagspeed_res)
+```
+
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(x = reslagspeed_res )
+```
+
+Run levene test for homogenity of variance across groups
+```{r}
+leveneTest(df_long$res_speed~df_long$group)
+```
+QQplot of the residuals and the results of the Levene test indicate that the assumption of normal distribution and variance homogenity are met. Resumption speed meets the assumptions for ANOVA best and shall therefore be used for the subsequent analysis.
+
+
+##### Plot resumption speed
+
+Boxplot for resumption speed per group
+
+```{r}
+ggplot(df_long,aes(x = group, y=res_speed) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "resumption speed",
+       title="resumption speed by group")
+```
+
+
+interaction plot
+```{r}
+interaction.plot(df_long$trial, df_long$group, df_long$res_speed, xlab = 'Task NR', ylab = 'resumption speed')
+
+```
+
+
+### Post-hoc analyis using pairwise paired t-tests
+
+```{r}
+pwc_trial <- df_long%>%
+  pairwise_t_test(
+    res_speed ~ trial, paired = TRUE,
+    p.adjust.method = "holm"
+    )
+
+pwc_trial
+```
+
+#### Compare results from the Anova with a mixed linear model.
+Again, main effects of group and trial reach statistical significance.  
+
+```{r}
+library(nlme)
+lm.res_lags <- lme(res_speed ~ group*trial, data = df_long, random = ~1|partnr, correlation = corCompSymm(form = ~1|partnr))
+
+anova(lm.res_lags, type="marginal")
+```
+
+#### Compute contrasts between control group and both experimental groups / only the context-sensitive experimental group
+
+The contrast between control group and both experimental groups reaches statistical significance. The other contrast does not.
+```{r}
+leastsquare = lsmeans(lm.res_lags, "group")
+
+Contrasts = list(ControlvsExp = c(-1, -1, 2), 
+                 ControlvsExpContext = c(0, -1, 1))
+
+contrast(leastsquare, Contrasts, adjust="sidak")
+```
+#### Descriptive data
+```{r}
+df_long %>%
+  group_by(trial, group) %>%
+  summarise(M_res = mean(res_speed), 
+            SD_res = sd(res_speed))
+```
+
+
+
+#### Plot the data per group and trial 
+```{r}
+#detach("package:ggpubr", unload=TRUE)
+#detach("package:rstatix", unload=TRUE)
+
+library(dplyr)
+df_long %>% 
+  group_by(trial,group) %>% 
+  summarise(res_speed_groups = mean(res_speed),
+            res_speed_sem = (sd(res_speed)/sqrt(length(res_speed)))) -> df_rs
+
+df_rs %>% 
+  ggplot() +
+  theme_classic() +
+  aes(x = trial, y = res_speed_groups, colour = group) +
+  geom_line(aes(group = group)) +
+  scale_color_manual(values =  c('darkgoldenrod2', 'darkcyan', 'darkred')) +
+  geom_point() +
+  geom_linerange(aes(x = trial, ymin = res_speed_groups - res_speed_sem, ymax = res_speed_groups + res_speed_sem), size = .3) +
+  theme(legend.box.background = element_rect(),
+  legend.box.margin = margin(4, 4, 4, 4)) +
+  labs(title = "Resumption speed per group and trial", y = "Resumption speed in 1/ms")
+  scale_y_continuous(limits = c(0,0.0003))
+```
+
+### Test resumption lags relative to average interclick-intervals
+  
+#### Analysis of resumption lag minus the average interclick-intervall (disruption score)
+ The data is difficult to interpret due to a high number of outliers. Also, the assumptions for homogenity of variance and normal distribution are both violated. It shall therefore be excluded from the final analysis.
+```{r}
+disruptionscore_anova = ezANOVA(
+data = df_long
+, dv = resumption_lags_alt1
+, wid = partnr
+, within = factor(trial)
+, between = group
+, detailed = TRUE
+, type = 3
+, return_aov = TRUE
+)
+
+anova_out(res_lag_alt1_anova)
+```
+Check normal distribution assumption
+```{r}
+#QQplots
+aov_ds.pr <- proj(disruptionscore_anova$aov) 
+ds_res <- aov_ds.pr[[3]][, "Residuals"]
+
+qqnorm(ds_res); qqline(ds_res)
+```
+
+```{r}
+# Run Shapiro-Wilk test
+shapiro.test(x = ds_res )
+```
+QQplot of the residuals and Shapiro-Wilk test indicates that the assumption of normal distribution is not met.
+
+Levene test for homogeneity of variance across groups
+```{r}
+leveneTest(df_long$resumption_lags_alt1~df_long$group)
+```
+
+Significant Levene Test indicates that variance homogenity is not given. Therefore, we compute a robust ANOVA.
+```{r}
+bwtrim(resumption_lags_alt1 ~ group*trial, id = partnr, data = df_long)
+```
+
+Plot the disruption scores
+```{r}
+# Boxplot for relative resumption lags per group
+ggplot(df_long,aes(x = df_long$'group', y=df_long$'resumption_lags_alt1') ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "disruption score",
+       title="average disruption score per group")
+```
+A large number of outliers makes it difficult to interpret the data. 
+
+```{r}
+interaction.plot(df_long$`trial`, df_long$group, df_long$resumption_lags_alt1, xlab = 'trial', ylab = 'Disruption scores', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+```
+
+
+```{r}
+## post-hoc analyis using pairwise paired t-tests
+
+pwc <- df_long%>%
+  pairwise_t_test(
+    res_speed ~ trial, paired = TRUE,
+    p.adjust.method = "bonferroni"
+    )
+pwc
+
+```
+
+### post-hoc analyis using pairwise paired t-tests
+
+```{r}
+pwc <- df_long%>%
+  pairwise_t_test(
+    res_speed ~ trial, paired = TRUE,
+    p.adjust.method = "bonferroni"
+    )
+pwc
+```
+
+
+### Analyse resumption lags relative to average interclick-intervals:  resumption lag divided by average interclick-interval
+
+The data indicates significant main effects of group and trial. However, the data is not normally distributed and there are a number of outliers. Overall, the absolute resumption speed presents the best distribution characteristics and shall therefore be used in the final analysis.
+```{r}
+res_lag_alt2_anova = ezANOVA(
+data = df_long
+, dv = resumption_lags_alt2
+, wid = partnr
+, within = trial
+, between = group
+, detailed = TRUE
+, type = 3
+, return_aov = TRUE
+)
+
+anova_out(res_lag_alt2_anova)
+
+## compute split-plots anova for relative resumption lags
+reslags_alt2_anova <- aov(resumption_lags_alt2 ~ trial*group + Error(partnr/(trial)), data=df_long)
+summary(reslags_alt2_anova)
+
+# check normal distribution assumption by plotting residuals
+aov_reslags_alt2.pr <- proj(reslags_alt2_anova) 
+reslagalt2_res <- aov_reslags_alt2.pr[[3]][, "Residuals"]
+
+qqnorm(reslagalt2_res); qqline(reslagalt2_res)
+
+# Run Shapiro-Wilk test
+shapiro.test(x = reslagalt2_res )
+
+# run levene test for homogeneity of variance across groups
+leveneTest(df_long$resumption_lags_alt2~df_long$group)
+```
+
+The tests indicate that the requirements for ANOVA are not fulfilled. Thus, we compute a robust ANOVA.
+```{r}
+bwtrim(resumption_lags_alt1 ~ group*trial, id = partnr, data = df_long)
+```
+
+
+```{r}
+
+# Boxplot for relative resumption lags per group
+ggplot(df_long,aes(x = group, y=resumption_lags_alt2) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "resumption lag",
+       title="relative resumption lag per group (Alternative 2)")
+
+interaction.plot(df_long$`trial`, df_long$group, df_long$resumption_lags_alt2, xlab = 'trial', ylab = 'Alternative 2 resumption lags', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+```
+
+#### Exclude outliers
+```{r}
+median_reslags_alt2 <- aggregate(resumption_lags_alt2 ~ group, df_long, median)
+median_reslags_alt2
+
+sd_reslags_alt2 <- aggregate(resumption_lags_alt2 ~ group, df_long, sd)
+sd_reslags_alt2
+
+exclude_outliers_interval <- median_reslags_alt2$resumption_lags_alt2 + 3*sd_reslags_alt2$resumption_lags_alt2
+
+exclude_outliers_interval
+```
+
+```{r}
+df_res <-df_long[!(df_long$group=="context-free experimental group" & df_long$resumption_lags_alt2>7.35),]
+df_res <- df_res[!(df_res$group=="context-sensitive experimental group" & df_res$resumption_lags_alt2>9.65),]
+df_res <- df_res[!(df_res$group=="control group" & df_res$resumption_lags_alt2>5.82),]
+
+count(df_res, group)
+```
+#### Check assumptions for ANOVA
+
+```{r}
+reslags_alt2o_anova <- aov(resumption_lags_alt2 ~ trial*group + Error(partnr/(trial)), data=df_res)
+summary(reslags_alt2o_anova)
+```
+
+Check normal distribution assumption by plotting residuals
+```{r}
+aov_reslags_alt2_o.pr <- proj(reslags_alt2o_anova) 
+reslagalt2_res_o <- aov_reslags_alt2_o.pr[[3]][, "Residuals"]
+
+qqnorm(reslagalt2_res_o); qqline(reslagalt2_res_o)
+```
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(x = reslagalt2_res_o )
+```
+
+
+
+Run Levene test for homogeneity of variance across groups
+```{r}
+leveneTest(df_res$resumption_lags_alt2~df_res$group)
+```
+  
+  QQplot of the residuals and Shapiro-Wilk test indicates that the assumption of normal distribution is not met --> compute robust ANOVA
+
+```{r}
+bwtrim(resumption_lags_alt2 ~ group*trial, id = partnr, data = df_res)
+```
+
+Boxplot and interaction for relative resumption lags per group (after removing outliers)
+```{r}
+interaction.plot(df_res$`trial`, df_res$group, df_res$resumption_lags_alt2, xlab = 'trial', ylab = 'Alternative 2 resumption lags', trace.label = 'group', cex=1.3, pch=1, pt.cex = 1)
+```
+
+After removing the outliers, significant differences between context-free experimental group and the other two groups emerge but no main effect of trial.  
+
+
+### List input lags
+Compare how long it takes test participants to make the next order list entry in the order list after an interruption. Untransformed list input lags meet the requirements for ANOVA best. There is a significant main effect of trial but no further significant effects.  
+
+##### Replace missing values with median
+```{r}
+aggregate(df_long$list_input_lags, by= list(df_long$group),FUN=function(x) {sum(is.na(x))} )
+```
+  
+  Missing values per test participant
+```{r}
+aggregate(df_long$list_input_lags, by= list(df_long$partnr),FUN=function(x) {sum(is.na(x))} )
+```
+  
+  
+
+Substitute missing values with median
+```{r}
+df_list_md <- df_long  %>% select(partnr, trial, group,list_input_lags)
+
+list_exp <- df_list_md$list_input_lags[which(df_list_md$group == "context-sensitive experimental group")]
+list_control <- df_list_md$list_input_lags[which(df_list_md$group == "control group")]
+list_exp_2 <- df_list_md$list_input_lags[which(df_list_md$group == "context-free experimental group")]
+md_exp <- median(list_exp, na.rm = TRUE)
+md_control <- median(list_control, na.rm = TRUE)
+md_exp_2 <- median(list_exp_2, na.rm = TRUE)
+
+# replace NA's with median
+df_list_md$list_input_lags[is.na(df_list_md$list_input_lags) & df_list_md$group == "context-sensitive experimental group"] <- md_exp
+df_list_md$list_input_lags[is.na(df_list_md$list_input_lags) & df_list_md$group == "control group"] <- md_control
+df_list_md$list_input_lags[is.na(df_list_md$list_input_lags) & df_list_md$group == "context-free experimental group"] <- md_exp_2
+
+## check NA's
+## missing values per group
+aggregate(df_list_md$list_input_lags, by= list(df_list_md$group),FUN=function(x) {sum(is.na(x))} )
+```
+
+
+
+#### Are there differences in how fast test participants make the the first order list entry after an interruption between groups and trials ?
+```{r}
+inputlag_anova <- ezANOVA(
+data = df_list_md
+, dv = list_input_lags
+, wid = partnr
+, within = trial
+, between = group
+, detailed = TRUE
+, type = 3
+, return_aov = TRUE
+)
+
+anova_out(inputlag_anova)
+```
+
+Check normal distribution assumption by plotting residuals
+```{r}
+aov_inputlag.pr <- proj(inputlag_anova$aov) 
+inputlag_res <- aov_inputlag.pr[[3]][, "Residuals"]
+
+qqnorm(inputlag_res); qqline(inputlag_res)
+```
+
+
+```{r}
+# Run Shapiro-Wilk test
+shapiro.test(x = inputlag_res )
+```
+
+Run Levene test for homogeneity of variance across groups
+
+```{r}
+leveneTest(df_list_md$list_input_lags~df_list_md$group)
+```
+
+The QQplot of the residuals and Levene test for homogenity of variance indicate that the assumptions for ANOVA are met. It is therefore not necessary to transform the data. 
+
+
+
+```{r}
+# Boxplot for list input lag by group
+ggplot(df_list_md,aes(x = group, y=list_input_lags) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "list input lag (in ms)",
+       title="List input lag by group after substituting missing values \n with the respective group median")
+```
+
+```{r}
+# Boxplot for list input lag by trial
+ggplot(df_list_md,aes(x = trial, y=list_input_lags) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="trial",
+       y = "list input lag (in ms)",
+       title="List input lag by trial after substituting missing values \n with the respective group median")
+```
+
+
+Post-hoc tests
+
+```{r}
+pwc_trial <- df_list_md %>%
+  pairwise_t_test(
+    list_input_lags ~ trial, paired = TRUE,
+    p.adjust.method = "holm"
+    )
+
+pwc_trial
+```
+
+```{r}
+df_list_md %>% 
+  group_by(trial,group) %>% 
+  summarise(lil_groups = mean(list_input_lags),
+            lil_sem = (sd(list_input_lags)/sqrt(length(list_input_lags)))) -> df_lil
+
+plot_lil = df_lil %>% 
+  ggplot() +
+  aes(x = trial, y = lil_groups, colour = group) +
+  theme_classic() +
+  geom_line(aes(group = group)) +
+  scale_color_manual(values =  c('darkgoldenrod2', 'darkcyan', 'darkred')) +
+  geom_point() +
+  geom_linerange(aes(x = trial, ymin = lil_groups - lil_sem, ymax = lil_groups + lil_sem), size = .3) +
+  theme(legend.justification=c(1,0), legend.position=c(1,0.6), legend.box.background = element_rect(),
+  legend.box.margin = margin(4, 4, 4, 4)) +
+  labs(title = "List input lags per group and trial", y = "list input lags in ms")
+
+plot_lil
+``` 
+  
+  
+### Purposeful action lags
+Analyse differences between experimental groups in the time it takes them until the next purposeful action. There are no advantages of log-transforming or inverting the purposeful action lags in terms of the normal distribution chracteristics of the data. Therefore, the analysis of the untransformed values shall be reported. The analysis reveals no significant effects, neither of group nor of trial.
+
+
+Create dataframe without control group
+```{r}
+df_exp <- df_long[!(df_long$group=="control group"),]
+```
+
+Convert group and trial to factors
+```{r}
+df_exp$group <- factor(df_exp$group)
+df_exp$trial <- factor(df_exp$trial)
+```
+
+Substitute missing values with group median
+```{r} 
+df_exp <- df_exp  %>% select(partnr, trial, group, purposeful_action_lags)
+
+list_exp1 <- df_exp$purposeful_action_lags[which(df_exp$group == "context-sensitive experimental group")]
+list_exp2 <- df_exp$purposeful_action_lags[which(df_exp$group == "context-free experimental group")]
+md_exp1 <- median(list_exp1, na.rm = TRUE)
+md_exp2 <- median(list_exp2, na.rm = TRUE)
+
+# replace NA's with median
+df_exp$purposeful_action_lags[is.na(df_exp$purposeful_action_lags) & df_exp$group == "context-sensitive experimental group"] <- md_exp1
+df_exp$purposeful_action_lags[is.na(df_exp$purposeful_action_lags) & df_exp$group == "context-free experimental group"] <- md_exp2
+## check NA's
+## missing values per group
+aggregate(df_exp$purposeful_action_lags, by= list(df_exp$group),FUN=function(x) {sum(is.na(x))} )
+```
+
+##### Plot the interaction
+
+
+```{r}
+df_exp %>% 
+  group_by(trial,group) %>% 
+  summarise(ppa_groups = mean(purposeful_action_lags),
+            ppa_sem = (sd(purposeful_action_lags)/sqrt(length(purposeful_action_lags)))) -> df_ppa
+
+plot_ppa = df_ppa %>% 
+  ggplot() +
+  theme_classic() +
+  aes(x = trial, y = ppa_groups, colour = group) +
+  geom_line(aes(group = group)) +
+  scale_color_manual(values =  c('darkgoldenrod2', 'darkcyan', 'darkred')) +
+  geom_point() +
+  geom_linerange(aes(x = trial, ymin = ppa_groups - ppa_sem, ymax = ppa_groups + ppa_sem), size = .3) +
+  theme(legend.justification=c(1,0), legend.position = c(0.9, 0.7), legend.box.background = element_rect(),
+  legend.box.margin = margin(4,4,4,4))
+  labs(title = "Purposeful action lags", y = "purposeful action lags in ms")
+
+plot_ppa
+```
+
+
+Combine list input lag and purposeful interaction lag plots
+```{r}
+library(ggpubr)
+ggarrange(plot_lil, plot_ppa, ncol = 2, common.legend = TRUE, legend = "bottom")
+```
+
+
+
+##### Boxplot for purposeful action lag by group
+```{r}
+ggplot(df_exp,aes(x = group, y=purposeful_action_lags) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "purposeful action lag",
+       title="Time until the next purposeful action after the interruption (in ms)")
+```
+
+##### Compute ezANOVA to extract residuals
+```{r}
+purposeful_action_lag_anova = ezANOVA(
+data = df_exp
+, dv = purposeful_action_lags
+, wid = partnr
+, within = trial
+, between = group
+, detailed = TRUE
+, type = 3
+, return_aov = TRUE
+)
+
+anova_out(purposeful_action_lag_anova)
+```
+
+Check normal distribution assumption by plotting residuals
+```{r}
+aov_ppa.pr <- proj(purposeful_action_lag_anova$aov) 
+ppa_res <- aov_ppa.pr[[3]][, "Residuals"]
+
+qqnorm(ppa_res); qqline(ppa_res)
+```
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(df_exp$purposeful_action_lags)
+```
+
+Run Levene test for homogeneity of variance across groups
+```{r}
+leveneTest(df_exp$purposeful_action_lags~df_exp$group)
+```
+
+The Shapiro-Wilk test indicates that the assumptions of normal distribution is not met. 
+
+Compute robust ANOVAs
+```{r}
+bwtrim(formula = purposeful_action_lags ~ group * trial, id = partnr, data = df_exp)
+```
+
+
+#### Test ANOVA requirements for log-transformed purposeful action lags
+
+log-transform the data
+```{r}
+df_exp$ppa_log <- log(df_exp$purposeful_action_lags)
+```
+
+Compute ezANOVA to extract residuals
+```{r}
+ppa_log_anova = ezANOVA(
+data = df_exp
+, dv = ppa_log
+, wid = partnr
+, within = trial
+, between = group
+, detailed = TRUE
+, type = 3
+, return_aov = TRUE
+)
+
+anova_out(ppa_log_anova)
+```
+
+Check normal distribution assumption by plotting residuals
+```{r}
+aov_ppa.pr <- proj(ppa_log_anova$aov) 
+ppa_res <- aov_ppa.pr[[3]][, "Residuals"]
+
+qqnorm(ppa_res); qqline(ppa_res)
+```
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(df_exp$ppa_log)
+```
+
+Run Levene test for homogeneity of variance across groups
+```{r}
+leveneTest(df_exp$ppa_log~df_exp$group)
+```
+
+Compute robust ANOVAs
+```{r}
+bwtrim(formula = ppa_log ~ group * trial, id = partnr, data = df_exp)
+```
+
+Plot the interaction
+
+
+Boxplot for log-transformed purposeful action lags by group
+```{r}
+ggplot(df_exp,aes(x = group, y=ppa_log) ) +
+  geom_boxplot() + 
+  stat_summary(fun.y=mean,shape=1,col='red',geom='point') +
+  labs(x="group",
+       y = "purposeful action lag",
+       title="Time until the next purposeful action after the interruption (in ms)")
+
+ggplot(aes(y = ppa_log, x = group, fill = trial), data = df_exp) + geom_boxplot()
+```
+
+#### Test ANOVA requirements for purposeful action speed
+
+transform the data
+```{r}
+df_exp$ppa_speed <- 1/(df_exp$purposeful_action_lags)
+```
+
+Compute ezANOVA to extract residuals
+```{r}
+ppa_speed_anova = ezANOVA(
+data = df_exp
+, dv = ppa_speed
+, wid = partnr
+, within = trial
+, between = group
+, detailed = TRUE
+, type = 3
+, return_aov = TRUE
+)
+
+anova_out(ppa_speed_anova)
+```
+
+Check normal distribution assumption by plotting residuals
+```{r}
+aov_ppa.pr <- proj(ppa_speed_anova$aov) 
+ppa_res <- aov_ppa.pr[[3]][, "Residuals"]
+
+qqnorm(ppa_res); qqline(ppa_res)
+```
+
+Run Shapiro-Wilk test
+```{r}
+shapiro.test(df_exp$ppa_speed)
+```
+
+QQplot of the residuals indicates that the assumption of normal distribution is not met 
+Run levene test for homogeneity of variance across groups
+```{r}
+leveneTest(df_exp$ppa_log~df_exp$group)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

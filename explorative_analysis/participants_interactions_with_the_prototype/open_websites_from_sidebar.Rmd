@@ -1,0 +1,247 @@
+---
+title: "Opening websites from sidebar"
+output: html_notebook
+---
+In this notebook, I analyse if participants who used the prototype's "open websites" function more differ from participants who used it less in terms of their TA-EG, SUS, NASA-TLX values or performance.
+
+## Load packages and data
+```{r}
+library(WRS2)
+library(rcompanion)
+library(feather)
+library(ggplot2)  
+library(plyr)
+library(ez)
+library(schoRsch)
+library(MASS)
+library(car)
+library(ggpubr)
+library(rstatix)
+library(tidyverse)
+library(here)
+```
+
+Load a dataframe with participants' interactions with the system.
+```{r}
+df_useractions <- read_feather(path = here('../../data_frames/results_test_02-04-2020_user_actions.file'))
+```
+
+
+Load dataframe with the remaining experimental data in wide format.
+```{r}
+df_wide <- read_feather(path = here('../../data_frames/results_test_18-03-2020.file'))
+```
+
+
+## Prepare the data
+
+### Assign participants to the experimental group 
+* version 1 and 2 --> control group
+* version 3 und 4 --> experimental group context free
+* version 5 und 6--> experimental group context sensitive
+
+```{r}
+df_wide$group <- ifelse((df_wide$version == 5 | df_wide$version == 6), 'context-sensitive experimental group', ifelse((df_wide$version == 1 | df_wide$version == 2), 'controlgroup', 'context-free experimental group'))
+
+df_useractions$group <- ifelse((df_useractions$version == 5 | df_useractions$version == 6), 'context-sensitive experimental group', ifelse((df_useractions$version == 1 | df_useractions$version == 2), 'controlgroup', 'context-free experimental group'))
+```
+
+```{r}
+# Convert trial, group and subject number to factors in each dataframe
+
+df_useractions$trial <- factor(df_useractions$trial, levels = c("tutorial", "warm up", "trial 1", "trial 2", "trial 3"))
+df_useractions$group <- factor(df_useractions$group)
+df_useractions$partnr <- factor(df_useractions$partnr)
+
+
+df_wide$group <- factor(df_wide$group)
+df_wide$partnr <- factor(df_wide$partnr)
+
+```
+
+
+### Converting the dataframes
+For participants' interactions with the prototype, we only want the data from participants in the experimental groups whilst working on the experimental tasks.
+```{r}
+# exclude interactions during tutorial and warm up
+df_trial <- df_useractions[!(df_useractions$trial=="tutorial" | df_useractions$trial=="warm up"), ]
+```
+
+```{r}
+# exclude data from the control group
+df <- df_trial[!(df_trial$group=="controlgroup"), ]
+```
+
+```{r}
+# convert df to wide format
+df_w <- pivot_wider(data = df, 
+                           id_cols = partnr, 
+                           names_from = trial, 
+                           values_from = c("add_note", "open_website_from_sidebar"))
+```
+
+```{r}
+# include how often participants used the "open websites" function in total
+
+df_w$open_websites_total <- rowSums(df_w[,c("open_website_from_sidebar_trial 1", "open_website_from_sidebar_trial 2", "open_website_from_sidebar_trial 3")])
+```
+
+```{r}
+# include a performance measure
+
+df_wide <- transform(df_wide, perf = mistakes_after_interruption / entries_after_interruption)
+```
+
+```{r}
+# merge the dataframes with participants' interactions with the prototype and dependent variables
+
+df_ow <- merge(df_wide[,c("partnr", "NASATLX_1", "NASATLX_2", "NASATLX_3", "NASATLX_4", "SUS", "TAEG", "group", "perf")], df_w, by="partnr")
+```
+
+We exclude participants 11 and 26 for analysing performance, as we excluded them for the hypothesis testing for performance.
+```{r}
+exclude <- list(11, 26)
+df_perf <- subset(df_ow, !(df_h$partnr %in% exclude))
+```
+
+
+## Analyse data
+### Do participants who used the prototype more have different charactertistics?
+
+### How often have participants used the "open website" function?
+
+```{r}
+table(df_ow$open_websites_total)
+plot(table(df_ow$open_websites_total))
+median(df_ow$open_websites_total)
+mean(df_ow$open_websites_total)
+```
+Usage decreases over trials.
+```{r}
+ggline(df, x = "trial", y ="open_website_from_sidebar", 
+       add = c("mean_se"), 
+       title = "nr of opening websites per trial")
+```
+
+#### correlations with TA-EG, SUS and NASA-TLX
+
+##### TA-EG (n.s.)
+There is no significant correlation between frequency of use of the "open website" function and participants' TA-EG. 
+```{r}
+cor.test(df_ow$TAEG, df_ow$open_websites_total)
+plot(df_ow$open_websites_total, df_ow$TAEG)
+```
+
+
+##### SUS (n.s.)
+```{r}
+cor.test(df_ow$SUS, df_ow$open_websites_total)
+plot(df_ow$open_websites_total, df_ow$SUS)
+```
+
+##### NASA-TLX (n.s.)
+```{r}
+df_ow$NASATLX_mean <- rowMeans(df_ow[,c("NASATLX_1", "NASATLX_2", "NASATLX_3", "NASATLX_4")])
+
+cor.test(df_ow$NASATLX_mean, df_ow$open_websites_total)
+cor.test(df_ow$NASATLX_2, df_ow$`open_website_from_sidebar_trial 1`)
+cor.test(df_ow$NASATLX_3, df_ow$`open_website_from_sidebar_trial 2`)
+cor.test(df_ow$NASATLX_4, df_ow$`open_website_from_sidebar_trial 3`)
+
+plot(df_ow$open_websites_total, df_ow$NASATLX_mean)
+```
+
+### Compare participants with high versus low usage of the highlights functions. 
+We compare participants who have not used the prototype in every trial vs. participants who have used the prototype at least once in every trial, as well as participants who have used the prototype more than average vs. less than average. 
+```{r}
+#categorize participants
+df_ow$usage_every_trial <- ifelse((df_ow$`open_website_from_sidebar_trial 1` == 0 | df_ow$`open_website_from_sidebar_trial 2` == 0 | df_ow$`open_website_from_sidebar_trial 3` == 0), 0, 1)
+df_ow$usage_every_trial <- as.factor(df_ow$usage_every_trial)
+df_ow$usage_above_average <- ifelse((df_ow$open_websites_total > 6), 1, 0)
+df_ow$usage_above_average <- as.factor(df_ow$usage_above_average)
+```
+
+#### TA-EG (n.s.)
+There is no difference in participants' TA-EG values for participants with low versus high usage.
+
+```{r}
+par(mfrow = c(2,1))
+    
+ggplot(aes(y = TAEG, x = usage_every_trial), data = df_ow) + geom_boxplot()
+ggplot(aes(y = TAEG, x = usage_above_average), data = df_ow) + geom_boxplot()
+```
+```{r}
+kruskal.test(df_ow$TAEG, df_ow$usage_every_trial)
+kruskal.test(df_ow$TAEG, df_ow$usage_above_average)
+
+```
+
+
+
+#### SUS (n.s.)
+There are no differences in participants' SUS scores between participants with low versus high usage.
+
+
+```{r}
+ggplot(aes(y = SUS, x = usage_every_trial), data = df_ow) + geom_boxplot()
+
+ggplot(aes(y = SUS, x = usage_above_average), data = df_ow) + geom_boxplot()
+```
+```{r}
+kruskal.test(df_ow$SUS, df_ow$usage_every_trial)
+kruskal.test(df_ow$SUS, df_ow$usage_above_average)
+
+```
+
+
+##### NASA-TLX (n.s.
+There are no significant differences in NASA-TLX for participants with low versus high usage of the function.
+
+```{r}
+ggplot(aes(y = NASATLX_mean, x = usage_every_trial), data = df_ow) + geom_boxplot()
+
+ggplot(aes(y = NASATLX_mean, x = usage_above_average), data = df_ow) + geom_boxplot()
+```
+```{r}
+kruskal.test(df_ow$NASATLX_mean, df_ow$usage_every_trial)
+
+kruskal.test(df_ow$NASATLX_mean, df_ow$usage_above_average)
+
+```
+```{r}
+table(df_ow$usage_above_average)
+table(df_ow$usage_every_trial)
+
+```
+
+
+### Analysis of performance
+
+There seem to be no differences for performance for participants who used the highlight function a every trial (/ above average) vs. not every trial (/below average). 
+
+```{r}
+df_perf$usage_every_trial <- ifelse((df_perf$`open_website_from_sidebar_trial 1` == 0 | df_perf$`open_website_from_sidebar_trial 2` == 0 | df_perf$`open_website_from_sidebar_trial 3` == 0), 0, 1)
+
+df_perf$usage_every_trial <- as.factor(df_perf$usage_every_trial)
+
+mean_open_website_p <- mean(df_perf$open_websites_total)
+
+df_perf$usage_above_average <- ifelse((df_perf$open_websites_total > mean_open_website_p), 1, 0)
+df_perf$usage_above_average <- as.factor(df_perf$usage_above_average)
+```
+
+```{r}
+ggplot(aes(y = perf, x = usage_every_trial), data = df_perf) + geom_boxplot()
+
+ggplot(aes(y = perf, x = usage_above_average), data = df_perf) + geom_boxplot()
+
+cor.test(df_perf$perf, df_perf$open_websites_total)
+```
+
+
+```{r}
+kruskal.test(df_perf$perf, df_perf$usage_every_trial)
+
+kruskal.test(df_perf$perf, df_perf$usage_above_average)
+```
+
